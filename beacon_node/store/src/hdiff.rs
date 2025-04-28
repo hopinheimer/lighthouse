@@ -154,11 +154,11 @@ pub struct HDiff {
 }
 
 #[superstruct(variants(V0, V1),
-    variant_attributes(derive(Debug, PartialEq, Encode, Decode)))]
-#[derive(Debug, PartialEq, Encode, Decode)]
+    variant_attributes(derive(Clone, Debug, PartialEq, Encode, Decode)))]
+#[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[ssz(enum_behaviour = "union")]
 pub struct BytesDiff {
-    bytes: Vec<u8>,
+    bytes: Vec<u8> ,
     #[superstruct(only(V1))]
     output_length: usize
 
@@ -275,8 +275,15 @@ impl HDiff {
         let historical_summaries =
             AppendOnlyDiff::compute(&source.historical_summaries, &target.historical_summaries)?;
 
+
         Ok(HDiff::V1(HDiffV1 {
-            state_diff,
+            state_diff: match state_diff {
+                BytesDiff::V0(v0) => BytesDiffV1 {
+                    bytes: v0.bytes,
+                    output_length: target.state.len()
+                },
+                BytesDiff::V1(v1) => v1,
+            },
             balances_diff,
             inactivity_scores_diff,
             validators_diff,
@@ -287,7 +294,7 @@ impl HDiff {
 
     pub fn apply(&self, source: &mut HDiffBuffer, config: &StoreConfig) -> Result<(), Error> {
         let source_state = std::mem::take(&mut source.state);
-        self.state_diff.apply(&source_state, &mut source.state)?;
+        self.state_diff().apply(&source_state, &mut source.state)?;
         self.balances_diff().apply(&mut source.balances, config)?;
         self.inactivity_scores_diff()
             .apply(&mut source.inactivity_scores, config)?;
@@ -314,6 +321,13 @@ impl HDiff {
             self.historical_roots().size(),
             self.historical_summaries().size(),
         ]
+    }
+
+    pub fn state_diff(&self) -> BytesDiff {
+        match self {
+            HDiff::V1(hdiff_v1) => BytesDiff::V1(hdiff_v1.state_diff.clone()),
+            HDiff::V0(hdiff_v0) => BytesDiff::V0(hdiff_v0.state_diff.clone())
+        }
     }
 }
 
@@ -347,6 +361,7 @@ impl BytesDiff {
         let bytes =
             xdelta3::encode(target_bytes, source_bytes).map_err(Error::UnableToComputeDiff)?;
         Ok(BytesDiff::V1(BytesDiffV1 { bytes, output_length: target_bytes.len() }))
+
     }
 
     pub fn apply(&self, source: &[u8], target: &mut Vec<u8>) -> Result<(), Error> {
@@ -359,7 +374,6 @@ impl BytesDiff {
             Self::V0(v0) => (((source.len() + v0.bytes.len()) * 3) / 2, v0.bytes.clone()),
             Self::V1(v1) => (v1.output_length,v1.bytes.clone())
         };
-
 
         let mut num_resizes = 0;
         loop {
