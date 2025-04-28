@@ -287,7 +287,7 @@ impl HDiff {
 
     pub fn apply(&self, source: &mut HDiffBuffer, config: &StoreConfig) -> Result<(), Error> {
         let source_state = std::mem::take(&mut source.state);
-        self.state_diff_v1().apply(&source_state, &mut source.state)?;
+        self.state_diff.apply(&source_state, &mut source.state)?;
         self.balances_diff().apply(&mut source.balances, config)?;
         self.inactivity_scores_diff()
             .apply(&mut source.inactivity_scores, config)?;
