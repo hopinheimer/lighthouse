@@ -120,13 +120,16 @@ pub struct HDiffBuffer {
 ///   automatically. xdelta3 algorithm showed diff compute and apply times of ~200 ms on a mainnet
 ///   state from Apr 2023 (570k indexes), and a 92kB diff size.
 #[superstruct(
-    variants(V0),
+    variants(V0, V1),
     variant_attributes(derive(Debug, PartialEq, Encode, Decode))
 )]
 #[derive(Debug, PartialEq, Encode, Decode)]
 #[ssz(enum_behaviour = "union")]
 pub struct HDiff {
-    state_diff: BytesDiff,
+    #[superstruct(only(V0), partial_getter(rename = "state_diff_v0"))]
+    state_diff: BytesDiffV0,
+    #[superstruct(only(V1), partial_getter(rename = "state_diff_v1"))]
+    state_diff: BytesDiffV1,
     balances_diff: CompressedU64Diff,
     /// inactivity_scores are small integers that change slowly epoch to epoch. And are 0 for all
     /// participants unless there's non-finality. Computing the diff and compressing the result is
@@ -150,9 +153,15 @@ pub struct HDiff {
     historical_summaries: AppendOnlyDiff<HistoricalSummary>,
 }
 
+#[superstruct(variants(V0, V1),
+    variant_attributes(derive(Debug, PartialEq, Encode, Decode)))]
 #[derive(Debug, PartialEq, Encode, Decode)]
+#[ssz(enum_behaviour = "union")]
 pub struct BytesDiff {
     bytes: Vec<u8>,
+    #[superstruct(only(V1))]
+    output_length: usize
+
 }
 
 #[derive(Debug, PartialEq, Encode, Decode)]
@@ -266,7 +275,7 @@ impl HDiff {
         let historical_summaries =
             AppendOnlyDiff::compute(&source.historical_summaries, &target.historical_summaries)?;
 
-        Ok(HDiff::V0(HDiffV0 {
+        Ok(HDiff::V1(HDiffV1 {
             state_diff,
             balances_diff,
             inactivity_scores_diff,
@@ -278,7 +287,7 @@ impl HDiff {
 
     pub fn apply(&self, source: &mut HDiffBuffer, config: &StoreConfig) -> Result<(), Error> {
         let source_state = std::mem::take(&mut source.state);
-        self.state_diff().apply(&source_state, &mut source.state)?;
+        self.state_diff_v1().apply(&source_state, &mut source.state)?;
         self.balances_diff().apply(&mut source.balances, config)?;
         self.inactivity_scores_diff()
             .apply(&mut source.inactivity_scores, config)?;
@@ -337,7 +346,7 @@ impl BytesDiff {
         // if we hit an insufficient space error.
         let bytes =
             xdelta3::encode(target_bytes, source_bytes).map_err(Error::UnableToComputeDiff)?;
-        Ok(Self { bytes })
+        Ok(BytesDiff::V1(BytesDiffV1 { bytes, output_length: target_bytes.len() }))
     }
 
     pub fn apply(&self, source: &[u8], target: &mut Vec<u8>) -> Result<(), Error> {
@@ -345,12 +354,16 @@ impl BytesDiff {
     }
 
     pub fn apply_xdelta(&self, source: &[u8], target: &mut Vec<u8>) -> Result<(), Error> {
-        // TODO(hdiff): Dynamic buffer allocation. This is a stopgap until we implement a schema
-        // change to store the output buffer size inside the `BytesDiff`.
-        let mut output_length = ((source.len() + self.bytes.len()) * 3) / 2;
+
+        let (mut output_length, bytes) = match self {
+            Self::V0(v0) => (((source.len() + v0.bytes.len()) * 3) / 2, v0.bytes.clone()),
+            Self::V1(v1) => (v1.output_length,v1.bytes.clone())
+        };
+
+
         let mut num_resizes = 0;
         loop {
-            match xdelta3::decode_with_output_len(&self.bytes, source, output_length as u32) {
+            match xdelta3::decode_with_output_len(&bytes, source, output_length as u32) {
                 Ok(result_buffer) => {
                     *target = result_buffer;
 
@@ -374,7 +387,11 @@ impl BytesDiff {
 
     /// Byte size of this instance
     pub fn size(&self) -> usize {
-        self.bytes.len()
+        match self {
+            BytesDiff::V0(bdiff_v0) => bdiff_v0.bytes.len(),
+            BytesDiff::V1(bdiff_v1) => bdiff_v1.bytes.len()
+
+        }
     }
 }
 
