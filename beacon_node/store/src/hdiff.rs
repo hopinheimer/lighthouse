@@ -158,7 +158,7 @@ pub struct HDiff {
 #[derive(Clone, Debug, PartialEq, Encode, Decode)]
 #[ssz(enum_behaviour = "union")]
 pub struct BytesDiff {
-    bytes: Vec<u8> ,
+    bytes: Vec<u8>,
     #[superstruct(only(V1))]
     output_length: usize
 
@@ -279,7 +279,7 @@ impl HDiff {
         Ok(HDiff::V1(HDiffV1 {
             state_diff: match state_diff {
                 BytesDiff::V0(v0) => BytesDiffV1 {
-                    bytes: v0.bytes,
+                    bytes: v0.bytes.to_vec(),
                     output_length: target.state.len()
                 },
                 BytesDiff::V1(v1) => v1,
