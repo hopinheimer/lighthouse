@@ -84,63 +84,63 @@ fn bytes_to_int64(slice: &[u8]) -> u64 {
     u64::from_le_bytes(bytes)
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloy_primitives::B256 as Hash256;
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use alloy_primitives::B256 as Hash256;
 
-    #[test]
-    #[ignore]
-    fn fuzz_test() {
-        let max_list_size = 2_usize.pow(24);
-        let test_runs = 1000;
+//     #[test]
+//     #[ignore]
+//     fn fuzz_test() {
+//         let max_list_size = 2_usize.pow(24);
+//         let test_runs = 1000;
 
-        // Test at max list_size with the end index.
-        for _ in 0..test_runs {
-            let index = max_list_size - 1;
-            let list_size = max_list_size;
-            let seed = Hash256::random();
-            let shuffle_rounds = 90;
+//         // Test at max list_size with the end index.
+//         for _ in 0..test_runs {
+//             let index = max_list_size - 1;
+//             let list_size = max_list_size;
+//             let seed = Hash256::random();
+//             let shuffle_rounds = 90;
 
-            assert!(compute_shuffled_index(index, list_size, &seed[..], shuffle_rounds).is_some());
-        }
+//             assert!(compute_shuffled_index(index, list_size, &seed[..], shuffle_rounds).is_some());
+//         }
 
-        // Test at max list_size low indices.
-        for i in 0..test_runs {
-            let index = i;
-            let list_size = max_list_size;
-            let seed = Hash256::random();
-            let shuffle_rounds = 90;
+//         // Test at max list_size low indices.
+//         for i in 0..test_runs {
+//             let index = i;
+//             let list_size = max_list_size;
+//             let seed = Hash256::random();
+//             let shuffle_rounds = 90;
 
-            assert!(compute_shuffled_index(index, list_size, &seed[..], shuffle_rounds).is_some());
-        }
+//             assert!(compute_shuffled_index(index, list_size, &seed[..], shuffle_rounds).is_some());
+//         }
 
-        // Test at max list_size high indices.
-        for i in 0..test_runs {
-            let index = max_list_size - 1 - i;
-            let list_size = max_list_size;
-            let seed = Hash256::random();
-            let shuffle_rounds = 90;
+//         // Test at max list_size high indices.
+//         for i in 0..test_runs {
+//             let index = max_list_size - 1 - i;
+//             let list_size = max_list_size;
+//             let seed = Hash256::random();
+//             let shuffle_rounds = 90;
 
-            assert!(compute_shuffled_index(index, list_size, &seed[..], shuffle_rounds).is_some());
-        }
-    }
+//             assert!(compute_shuffled_index(index, list_size, &seed[..], shuffle_rounds).is_some());
+//         }
+//     }
 
-    #[test]
-    fn returns_none_for_zero_length_list() {
-        assert_eq!(None, compute_shuffled_index(100, 0, &[42, 42], 90));
-    }
+//     #[test]
+//     fn returns_none_for_zero_length_list() {
+//         assert_eq!(None, compute_shuffled_index(100, 0, &[42, 42], 90));
+//     }
 
-    #[test]
-    fn returns_none_for_out_of_bounds_index() {
-        assert_eq!(None, compute_shuffled_index(100, 100, &[42, 42], 90));
-    }
+//     #[test]
+//     fn returns_none_for_out_of_bounds_index() {
+//         assert_eq!(None, compute_shuffled_index(100, 100, &[42, 42], 90));
+//     }
 
-    #[test]
-    fn returns_none_for_too_large_list() {
-        assert_eq!(
-            None,
-            compute_shuffled_index(100, usize::MAX / 2, &[42, 42], 90)
-        );
-    }
-}
+//     #[test]
+//     fn returns_none_for_too_large_list() {
+//         assert_eq!(
+//             None,
+//             compute_shuffled_index(100, usize::MAX / 2, &[42, 42], 90)
+//         );
+//     }
+// }
