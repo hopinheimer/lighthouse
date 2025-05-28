@@ -229,7 +229,6 @@ dependencies = [
  "derive_arbitrary",
  "derive_more 2.0.1",
  "foldhash",
- "getrandom 0.3.2",
  "hashbrown 0.15.3",
  "indexmap 2.9.0",
  "itoa",
@@ -8647,10 +8646,8 @@ name = "state_processing"
 version = "0.2.0"
 dependencies = [
  "arbitrary",
- "beacon_chain",
  "bls",
  "derivative",
- "env_logger 0.9.3",
  "ethereum_hashing",
  "ethereum_ssz",
  "ethereum_ssz_derive",
@@ -8665,7 +8662,6 @@ dependencies = [
  "smallvec",
  "ssz_types",
  "test_random_derive",
- "tokio",
  "tree_hash",
  "types",
 ]

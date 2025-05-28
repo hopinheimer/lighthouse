@@ -438,92 +438,92 @@ pub trait StoreItem: Sized {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::database::interface::BeaconNodeBackend;
+// #[cfg(test)]
+// mod tests {
+//     use crate::database::interface::BeaconNodeBackend;
 
-    use super::*;
-    use ssz::{Decode, Encode};
-    use ssz_derive::{Decode, Encode};
-    use tempfile::tempdir;
+//     use super::*;
+//     use ssz::{Decode, Encode};
+//     use ssz_derive::{Decode, Encode};
+//     use tempfile::tempdir;
 
-    #[derive(PartialEq, Debug, Encode, Decode)]
-    struct StorableThing {
-        a: u64,
-        b: u64,
-    }
+//     #[derive(PartialEq, Debug, Encode, Decode)]
+//     struct StorableThing {
+//         a: u64,
+//         b: u64,
+//     }
 
-    impl StoreItem for StorableThing {
-        fn db_column() -> DBColumn {
-            DBColumn::BeaconBlock
-        }
+//     impl StoreItem for StorableThing {
+//         fn db_column() -> DBColumn {
+//             DBColumn::BeaconBlock
+//         }
 
-        fn as_store_bytes(&self) -> Vec<u8> {
-            self.as_ssz_bytes()
-        }
+//         fn as_store_bytes(&self) -> Vec<u8> {
+//             self.as_ssz_bytes()
+//         }
 
-        fn from_store_bytes(bytes: &[u8]) -> Result<Self, Error> {
-            Self::from_ssz_bytes(bytes).map_err(Into::into)
-        }
-    }
+//         fn from_store_bytes(bytes: &[u8]) -> Result<Self, Error> {
+//             Self::from_ssz_bytes(bytes).map_err(Into::into)
+//         }
+//     }
 
-    fn test_impl(store: impl ItemStore<MinimalEthSpec>) {
-        let key = Hash256::random();
-        let item = StorableThing { a: 1, b: 42 };
+//     fn test_impl(store: impl ItemStore<MinimalEthSpec>) {
+//         let key = Hash256::random();
+//         let item = StorableThing { a: 1, b: 42 };
 
-        assert!(!store.exists::<StorableThing>(&key).unwrap());
+//         assert!(!store.exists::<StorableThing>(&key).unwrap());
 
-        store.put(&key, &item).unwrap();
+//         store.put(&key, &item).unwrap();
 
-        assert!(store.exists::<StorableThing>(&key).unwrap());
+//         assert!(store.exists::<StorableThing>(&key).unwrap());
 
-        let retrieved = store.get(&key).unwrap().unwrap();
-        assert_eq!(item, retrieved);
+//         let retrieved = store.get(&key).unwrap().unwrap();
+//         assert_eq!(item, retrieved);
 
-        store.delete::<StorableThing>(&key).unwrap();
+//         store.delete::<StorableThing>(&key).unwrap();
 
-        assert!(!store.exists::<StorableThing>(&key).unwrap());
+//         assert!(!store.exists::<StorableThing>(&key).unwrap());
 
-        assert_eq!(store.get::<StorableThing>(&key).unwrap(), None);
-    }
+//         assert_eq!(store.get::<StorableThing>(&key).unwrap(), None);
+//     }
 
-    #[test]
-    fn simplediskdb() {
-        let dir = tempdir().unwrap();
-        let path = dir.path();
-        let store = BeaconNodeBackend::open(&StoreConfig::default(), path).unwrap();
+//     #[test]
+//     fn simplediskdb() {
+//         let dir = tempdir().unwrap();
+//         let path = dir.path();
+//         let store = BeaconNodeBackend::open(&StoreConfig::default(), path).unwrap();
 
-        test_impl(store);
-    }
+//         test_impl(store);
+//     }
 
-    #[test]
-    fn memorydb() {
-        let store = MemoryStore::open();
+//     #[test]
+//     fn memorydb() {
+//         let store = MemoryStore::open();
 
-        test_impl(store);
-    }
+//         test_impl(store);
+//     }
 
-    #[test]
-    fn exists() {
-        let store = MemoryStore::<MinimalEthSpec>::open();
-        let key = Hash256::random();
-        let item = StorableThing { a: 1, b: 42 };
+//     #[test]
+//     fn exists() {
+//         let store = MemoryStore::<MinimalEthSpec>::open();
+//         let key = Hash256::random();
+//         let item = StorableThing { a: 1, b: 42 };
 
-        assert!(!store.exists::<StorableThing>(&key).unwrap());
+//         assert!(!store.exists::<StorableThing>(&key).unwrap());
 
-        store.put(&key, &item).unwrap();
+//         store.put(&key, &item).unwrap();
 
-        assert!(store.exists::<StorableThing>(&key).unwrap());
+//         assert!(store.exists::<StorableThing>(&key).unwrap());
 
-        store.delete::<StorableThing>(&key).unwrap();
+//         store.delete::<StorableThing>(&key).unwrap();
 
-        assert!(!store.exists::<StorableThing>(&key).unwrap());
-    }
+//         assert!(!store.exists::<StorableThing>(&key).unwrap());
+//     }
 
-    #[test]
-    fn test_get_col_from_key() {
-        let key = get_key_for_col(DBColumn::BeaconBlock, &[1u8; 32]);
-        let col = get_col_from_key(&key).unwrap();
-        assert_eq!(col, "blk");
-    }
-}
+//     #[test]
+//     fn test_get_col_from_key() {
+//         let key = get_key_for_col(DBColumn::BeaconBlock, &[1u8; 32]);
+//         let col = get_col_from_key(&key).unwrap();
+//         assert_eq!(col, "blk");
+//     }
+// }

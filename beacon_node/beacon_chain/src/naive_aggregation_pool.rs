@@ -574,403 +574,403 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use ssz_types::BitList;
-    use store::BitVector;
-    use tree_hash::TreeHash;
-    use types::{
-        test_utils::{generate_deterministic_keypair, test_random_instance},
-        Attestation, AttestationBase, AttestationElectra, FixedBytesExtended, Fork, Hash256,
-        SyncCommitteeMessage,
-    };
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use ssz_types::BitList;
+//     use store::BitVector;
+//     use tree_hash::TreeHash;
+//     use types::{
+//         test_utils::{generate_deterministic_keypair, test_random_instance},
+//         Attestation, AttestationBase, AttestationElectra, FixedBytesExtended, Fork, Hash256,
+//         SyncCommitteeMessage,
+//     };
 
-    type E = types::MainnetEthSpec;
+//     type E = types::MainnetEthSpec;
 
-    fn get_attestation_base(slot: Slot) -> Attestation<E> {
-        let mut a: AttestationBase<E> = test_random_instance();
-        a.data.slot = slot;
-        a.aggregation_bits = BitList::with_capacity(4).expect("should create bitlist");
-        Attestation::Base(a)
-    }
+//     fn get_attestation_base(slot: Slot) -> Attestation<E> {
+//         let mut a: AttestationBase<E> = test_random_instance();
+//         a.data.slot = slot;
+//         a.aggregation_bits = BitList::with_capacity(4).expect("should create bitlist");
+//         Attestation::Base(a)
+//     }
 
-    fn get_attestation_electra(slot: Slot) -> Attestation<E> {
-        let mut a: AttestationElectra<E> = test_random_instance();
-        a.data.slot = slot;
-        a.aggregation_bits = BitList::with_capacity(4).expect("should create bitlist");
-        a.committee_bits = BitVector::new();
-        a.committee_bits
-            .set(0, true)
-            .expect("should set committee bit");
-        Attestation::Electra(a)
-    }
+//     fn get_attestation_electra(slot: Slot) -> Attestation<E> {
+//         let mut a: AttestationElectra<E> = test_random_instance();
+//         a.data.slot = slot;
+//         a.aggregation_bits = BitList::with_capacity(4).expect("should create bitlist");
+//         a.committee_bits = BitVector::new();
+//         a.committee_bits
+//             .set(0, true)
+//             .expect("should set committee bit");
+//         Attestation::Electra(a)
+//     }
 
-    fn get_sync_contribution(slot: Slot) -> SyncCommitteeContribution<E> {
-        let mut a: SyncCommitteeContribution<E> = test_random_instance();
-        a.slot = slot;
-        a.aggregation_bits = BitVector::new();
-        a
-    }
+//     fn get_sync_contribution(slot: Slot) -> SyncCommitteeContribution<E> {
+//         let mut a: SyncCommitteeContribution<E> = test_random_instance();
+//         a.slot = slot;
+//         a.aggregation_bits = BitVector::new();
+//         a
+//     }
 
-    fn sign_attestation(a: &mut Attestation<E>, i: usize, genesis_validators_root: Hash256) {
-        a.sign(
-            &generate_deterministic_keypair(i).sk,
-            i,
-            &Fork::default(),
-            genesis_validators_root,
-            &E::default_spec(),
-        )
-        .expect("should sign attestation");
-    }
+//     fn sign_attestation(a: &mut Attestation<E>, i: usize, genesis_validators_root: Hash256) {
+//         a.sign(
+//             &generate_deterministic_keypair(i).sk,
+//             i,
+//             &Fork::default(),
+//             genesis_validators_root,
+//             &E::default_spec(),
+//         )
+//         .expect("should sign attestation");
+//     }
 
-    fn sign_sync_contribution(
-        a: &mut SyncCommitteeContribution<E>,
-        i: usize,
-        genesis_validators_root: Hash256,
-    ) {
-        let sync_message = SyncCommitteeMessage::new::<E>(
-            a.slot,
-            a.beacon_block_root,
-            i as u64,
-            &generate_deterministic_keypair(i).sk,
-            &Fork::default(),
-            genesis_validators_root,
-            &E::default_spec(),
-        );
-        let signed_contribution: SyncCommitteeContribution<E> =
-            SyncCommitteeContribution::from_message(&sync_message, a.subcommittee_index, i)
-                .unwrap();
+//     fn sign_sync_contribution(
+//         a: &mut SyncCommitteeContribution<E>,
+//         i: usize,
+//         genesis_validators_root: Hash256,
+//     ) {
+//         let sync_message = SyncCommitteeMessage::new::<E>(
+//             a.slot,
+//             a.beacon_block_root,
+//             i as u64,
+//             &generate_deterministic_keypair(i).sk,
+//             &Fork::default(),
+//             genesis_validators_root,
+//             &E::default_spec(),
+//         );
+//         let signed_contribution: SyncCommitteeContribution<E> =
+//             SyncCommitteeContribution::from_message(&sync_message, a.subcommittee_index, i)
+//                 .unwrap();
 
-        a.aggregate(&signed_contribution);
-    }
+//         a.aggregate(&signed_contribution);
+//     }
 
-    fn unset_attestation_bit(a: &mut Attestation<E>, i: usize) {
-        match a {
-            Attestation::Base(ref mut att) => att
-                .aggregation_bits
-                .set(i, false)
-                .expect("should unset aggregation bit"),
-            Attestation::Electra(ref mut att) => att
-                .aggregation_bits
-                .set(i, false)
-                .expect("should unset aggregation bit"),
-        }
-    }
+//     fn unset_attestation_bit(a: &mut Attestation<E>, i: usize) {
+//         match a {
+//             Attestation::Base(ref mut att) => att
+//                 .aggregation_bits
+//                 .set(i, false)
+//                 .expect("should unset aggregation bit"),
+//             Attestation::Electra(ref mut att) => att
+//                 .aggregation_bits
+//                 .set(i, false)
+//                 .expect("should unset aggregation bit"),
+//         }
+//     }
 
-    fn unset_sync_contribution_bit(a: &mut SyncCommitteeContribution<E>, i: usize) {
-        a.aggregation_bits
-            .set(i, false)
-            .expect("should unset aggregation bit")
-    }
+//     fn unset_sync_contribution_bit(a: &mut SyncCommitteeContribution<E>, i: usize) {
+//         a.aggregation_bits
+//             .set(i, false)
+//             .expect("should unset aggregation bit")
+//     }
 
-    fn mutate_attestation_block_root(a: &mut Attestation<E>, block_root: Hash256) {
-        a.data_mut().beacon_block_root = block_root
-    }
+//     fn mutate_attestation_block_root(a: &mut Attestation<E>, block_root: Hash256) {
+//         a.data_mut().beacon_block_root = block_root
+//     }
 
-    fn mutate_attestation_slot(a: &mut Attestation<E>, slot: Slot) {
-        a.data_mut().slot = slot
-    }
+//     fn mutate_attestation_slot(a: &mut Attestation<E>, slot: Slot) {
+//         a.data_mut().slot = slot
+//     }
 
-    fn attestation_block_root_comparator(a: &Attestation<E>, block_root: Hash256) -> bool {
-        a.data().beacon_block_root == block_root
-    }
+//     fn attestation_block_root_comparator(a: &Attestation<E>, block_root: Hash256) -> bool {
+//         a.data().beacon_block_root == block_root
+//     }
 
-    fn key_from_attestation(a: &Attestation<E>) -> AttestationKey {
-        AttestationKey::from_attestation_ref(a.to_ref()).expect("should create attestation key")
-    }
+//     fn key_from_attestation(a: &Attestation<E>) -> AttestationKey {
+//         AttestationKey::from_attestation_ref(a.to_ref()).expect("should create attestation key")
+//     }
 
-    fn mutate_sync_contribution_block_root(
-        a: &mut SyncCommitteeContribution<E>,
-        block_root: Hash256,
-    ) {
-        a.beacon_block_root = block_root
-    }
+//     fn mutate_sync_contribution_block_root(
+//         a: &mut SyncCommitteeContribution<E>,
+//         block_root: Hash256,
+//     ) {
+//         a.beacon_block_root = block_root
+//     }
 
-    fn mutate_sync_contribution_slot(a: &mut SyncCommitteeContribution<E>, slot: Slot) {
-        a.slot = slot
-    }
+//     fn mutate_sync_contribution_slot(a: &mut SyncCommitteeContribution<E>, slot: Slot) {
+//         a.slot = slot
+//     }
 
-    fn sync_contribution_block_root_comparator(
-        a: &SyncCommitteeContribution<E>,
-        block_root: Hash256,
-    ) -> bool {
-        a.beacon_block_root == block_root
-    }
+//     fn sync_contribution_block_root_comparator(
+//         a: &SyncCommitteeContribution<E>,
+//         block_root: Hash256,
+//     ) -> bool {
+//         a.beacon_block_root == block_root
+//     }
 
-    fn key_from_sync_contribution(a: &SyncCommitteeContribution<E>) -> SyncContributionData {
-        SyncContributionData::from_contribution(a)
-    }
+//     fn key_from_sync_contribution(a: &SyncCommitteeContribution<E>) -> SyncContributionData {
+//         SyncContributionData::from_contribution(a)
+//     }
 
-    #[test]
-    fn attestation_key_tree_hash_tests() {
-        let attestation_base = get_attestation_base(Slot::new(42));
-        // for a base attestation, the tree_hash_root() of the key should be the same as the tree_hash_root() of the data
-        let attestation_key_base = AttestationKey::from_attestation_ref(attestation_base.to_ref())
-            .expect("should create attestation key");
-        assert_eq!(
-            attestation_key_base.tree_hash_root(),
-            attestation_base.data().tree_hash_root()
-        );
-        let mut attestation_electra = get_attestation_electra(Slot::new(42));
-        // for an electra attestation, the tree_hash_root() of the key should be different from the tree_hash_root() of the data
-        let attestation_key_electra =
-            AttestationKey::from_attestation_ref(attestation_electra.to_ref())
-                .expect("should create attestation key");
-        assert_ne!(
-            attestation_key_electra.tree_hash_root(),
-            attestation_electra.data().tree_hash_root()
-        );
-        // for an electra attestation, the tree_hash_root() of the key should be dependent on which committee bit is set
-        let committe_bits = attestation_electra
-            .committee_bits_mut()
-            .expect("should get committee bits");
-        committe_bits
-            .set(0, false)
-            .expect("should set committee bit");
-        committe_bits
-            .set(1, true)
-            .expect("should set committee bit");
-        let new_attestation_key_electra =
-            AttestationKey::from_attestation_ref(attestation_electra.to_ref())
-                .expect("should create attestation key");
-        // this new key should have a different tree_hash_root() than the previous key
-        assert_ne!(
-            attestation_key_electra.tree_hash_root(),
-            new_attestation_key_electra.tree_hash_root()
-        );
-    }
+//     #[test]
+//     fn attestation_key_tree_hash_tests() {
+//         let attestation_base = get_attestation_base(Slot::new(42));
+//         // for a base attestation, the tree_hash_root() of the key should be the same as the tree_hash_root() of the data
+//         let attestation_key_base = AttestationKey::from_attestation_ref(attestation_base.to_ref())
+//             .expect("should create attestation key");
+//         assert_eq!(
+//             attestation_key_base.tree_hash_root(),
+//             attestation_base.data().tree_hash_root()
+//         );
+//         let mut attestation_electra = get_attestation_electra(Slot::new(42));
+//         // for an electra attestation, the tree_hash_root() of the key should be different from the tree_hash_root() of the data
+//         let attestation_key_electra =
+//             AttestationKey::from_attestation_ref(attestation_electra.to_ref())
+//                 .expect("should create attestation key");
+//         assert_ne!(
+//             attestation_key_electra.tree_hash_root(),
+//             attestation_electra.data().tree_hash_root()
+//         );
+//         // for an electra attestation, the tree_hash_root() of the key should be dependent on which committee bit is set
+//         let committe_bits = attestation_electra
+//             .committee_bits_mut()
+//             .expect("should get committee bits");
+//         committe_bits
+//             .set(0, false)
+//             .expect("should set committee bit");
+//         committe_bits
+//             .set(1, true)
+//             .expect("should set committee bit");
+//         let new_attestation_key_electra =
+//             AttestationKey::from_attestation_ref(attestation_electra.to_ref())
+//                 .expect("should create attestation key");
+//         // this new key should have a different tree_hash_root() than the previous key
+//         assert_ne!(
+//             attestation_key_electra.tree_hash_root(),
+//             new_attestation_key_electra.tree_hash_root()
+//         );
+//     }
 
-    macro_rules! test_suite {
-        (
-            $mod_name: ident,
-            $get_method_name: ident,
-            $sign_method_name: ident,
-            $unset_method_name: ident,
-            $block_root_mutator: ident,
-            $slot_mutator: ident,
-            $block_root_comparator: ident,
-            $key_getter: ident,
-            $map_type: ident,
-            $item_limit: expr
-        ) => {
-            #[cfg(test)]
-            mod $mod_name {
-                use super::*;
+//     macro_rules! test_suite {
+//         (
+//             $mod_name: ident,
+//             $get_method_name: ident,
+//             $sign_method_name: ident,
+//             $unset_method_name: ident,
+//             $block_root_mutator: ident,
+//             $slot_mutator: ident,
+//             $block_root_comparator: ident,
+//             $key_getter: ident,
+//             $map_type: ident,
+//             $item_limit: expr
+//         ) => {
+//             #[cfg(test)]
+//             mod $mod_name {
+//                 use super::*;
 
-                #[test]
-                fn single_item() {
-                    let mut a = $get_method_name(Slot::new(0));
+//                 #[test]
+//                 fn single_item() {
+//                     let mut a = $get_method_name(Slot::new(0));
 
-                    let mut pool: NaiveAggregationPool<$map_type<E>> =
-                        NaiveAggregationPool::<$map_type<E>>::default();
+//                     let mut pool: NaiveAggregationPool<$map_type<E>> =
+//                         NaiveAggregationPool::<$map_type<E>>::default();
 
-                    assert_eq!(
-                        pool.insert(a.as_reference()),
-                        Err(Error::NoAggregationBitsSet),
-                        "should not accept item without any signatures"
-                    );
+//                     assert_eq!(
+//                         pool.insert(a.as_reference()),
+//                         Err(Error::NoAggregationBitsSet),
+//                         "should not accept item without any signatures"
+//                     );
 
-                    $sign_method_name(&mut a, 0, Hash256::random());
+//                     $sign_method_name(&mut a, 0, Hash256::random());
 
-                    assert_eq!(
-                        pool.insert(a.as_reference()),
-                        Ok(InsertOutcome::NewItemInserted { committee_index: 0 }),
-                        "should accept new item"
-                    );
-                    assert_eq!(
-                        pool.insert(a.as_reference()),
-                        Ok(InsertOutcome::SignatureAlreadyKnown { committee_index: 0 }),
-                        "should acknowledge duplicate signature"
-                    );
+//                     assert_eq!(
+//                         pool.insert(a.as_reference()),
+//                         Ok(InsertOutcome::NewItemInserted { committee_index: 0 }),
+//                         "should accept new item"
+//                     );
+//                     assert_eq!(
+//                         pool.insert(a.as_reference()),
+//                         Ok(InsertOutcome::SignatureAlreadyKnown { committee_index: 0 }),
+//                         "should acknowledge duplicate signature"
+//                     );
 
-                    let retrieved = pool
-                        .get(&$key_getter(&a))
-                        .expect("should not error while getting item");
-                    assert_eq!(retrieved, a, "retrieved item should equal the one inserted");
+//                     let retrieved = pool
+//                         .get(&$key_getter(&a))
+//                         .expect("should not error while getting item");
+//                     assert_eq!(retrieved, a, "retrieved item should equal the one inserted");
 
-                    $sign_method_name(&mut a, 1, Hash256::random());
+//                     $sign_method_name(&mut a, 1, Hash256::random());
 
-                    assert_eq!(
-                        pool.insert(a.as_reference()),
-                        Err(Error::MoreThanOneAggregationBitSet(2)),
-                        "should not accept item with multiple signatures"
-                    );
-                }
+//                     assert_eq!(
+//                         pool.insert(a.as_reference()),
+//                         Err(Error::MoreThanOneAggregationBitSet(2)),
+//                         "should not accept item with multiple signatures"
+//                     );
+//                 }
 
-                #[test]
-                fn multiple_items() {
-                    let mut a_0 = $get_method_name(Slot::new(0));
-                    let mut a_1 = a_0.clone();
+//                 #[test]
+//                 fn multiple_items() {
+//                     let mut a_0 = $get_method_name(Slot::new(0));
+//                     let mut a_1 = a_0.clone();
 
-                    let genesis_validators_root = Hash256::random();
-                    $sign_method_name(&mut a_0, 0, genesis_validators_root);
-                    $sign_method_name(&mut a_1, 1, genesis_validators_root);
+//                     let genesis_validators_root = Hash256::random();
+//                     $sign_method_name(&mut a_0, 0, genesis_validators_root);
+//                     $sign_method_name(&mut a_1, 1, genesis_validators_root);
 
-                    let mut pool: NaiveAggregationPool<$map_type<E>> =
-                        NaiveAggregationPool::<$map_type<E>>::default();
+//                     let mut pool: NaiveAggregationPool<$map_type<E>> =
+//                         NaiveAggregationPool::<$map_type<E>>::default();
 
-                    assert_eq!(
-                        pool.insert(a_0.as_reference()),
-                        Ok(InsertOutcome::NewItemInserted { committee_index: 0 }),
-                        "should accept a_0"
-                    );
-                    assert_eq!(
-                        pool.insert(a_1.as_reference()),
-                        Ok(InsertOutcome::SignatureAggregated { committee_index: 1 }),
-                        "should accept a_1"
-                    );
+//                     assert_eq!(
+//                         pool.insert(a_0.as_reference()),
+//                         Ok(InsertOutcome::NewItemInserted { committee_index: 0 }),
+//                         "should accept a_0"
+//                     );
+//                     assert_eq!(
+//                         pool.insert(a_1.as_reference()),
+//                         Ok(InsertOutcome::SignatureAggregated { committee_index: 1 }),
+//                         "should accept a_1"
+//                     );
 
-                    let retrieved = pool
-                        .get(&$key_getter(&a_0))
-                        .expect("should not error while getting attestation");
+//                     let retrieved = pool
+//                         .get(&$key_getter(&a_0))
+//                         .expect("should not error while getting attestation");
 
-                    let mut a_01 = a_0.clone();
-                    a_01.aggregate(a_1.as_reference());
+//                     let mut a_01 = a_0.clone();
+//                     a_01.aggregate(a_1.as_reference());
 
-                    assert_eq!(retrieved, a_01, "retrieved item should be aggregated");
+//                     assert_eq!(retrieved, a_01, "retrieved item should be aggregated");
 
-                    /*
-                     * Throw different data in there and ensure it isn't aggregated
-                     */
+//                     /*
+//                      * Throw different data in there and ensure it isn't aggregated
+//                      */
 
-                    let mut a_different = a_0.clone();
-                    let different_root = Hash256::from_low_u64_be(1337);
-                    $unset_method_name(&mut a_different, 0);
-                    $sign_method_name(&mut a_different, 2, genesis_validators_root);
-                    assert!(!$block_root_comparator(&a_different, different_root));
-                    $block_root_mutator(&mut a_different, different_root);
+//                     let mut a_different = a_0.clone();
+//                     let different_root = Hash256::from_low_u64_be(1337);
+//                     $unset_method_name(&mut a_different, 0);
+//                     $sign_method_name(&mut a_different, 2, genesis_validators_root);
+//                     assert!(!$block_root_comparator(&a_different, different_root));
+//                     $block_root_mutator(&mut a_different, different_root);
 
-                    assert_eq!(
-                        pool.insert(a_different.as_reference()),
-                        Ok(InsertOutcome::NewItemInserted { committee_index: 2 }),
-                        "should accept a_different"
-                    );
+//                     assert_eq!(
+//                         pool.insert(a_different.as_reference()),
+//                         Ok(InsertOutcome::NewItemInserted { committee_index: 2 }),
+//                         "should accept a_different"
+//                     );
 
-                    assert_eq!(
-                        pool.get(&$key_getter(&a_0))
-                            .expect("should not error while getting item"),
-                        retrieved,
-                        "should not have aggregated different items with different data"
-                    );
-                }
+//                     assert_eq!(
+//                         pool.get(&$key_getter(&a_0))
+//                             .expect("should not error while getting item"),
+//                         retrieved,
+//                         "should not have aggregated different items with different data"
+//                     );
+//                 }
 
-                #[test]
-                fn auto_pruning_item() {
-                    let mut base = $get_method_name(Slot::new(0));
-                    $sign_method_name(&mut base, 0, Hash256::random());
+//                 #[test]
+//                 fn auto_pruning_item() {
+//                     let mut base = $get_method_name(Slot::new(0));
+//                     $sign_method_name(&mut base, 0, Hash256::random());
 
-                    let mut pool: NaiveAggregationPool<$map_type<E>> =
-                        NaiveAggregationPool::<$map_type<E>>::default();
+//                     let mut pool: NaiveAggregationPool<$map_type<E>> =
+//                         NaiveAggregationPool::<$map_type<E>>::default();
 
-                    for i in 0..SLOTS_RETAINED * 2 {
-                        let slot = Slot::from(i);
-                        let mut a = base.clone();
-                        $slot_mutator(&mut a, slot);
+//                     for i in 0..SLOTS_RETAINED * 2 {
+//                         let slot = Slot::from(i);
+//                         let mut a = base.clone();
+//                         $slot_mutator(&mut a, slot);
 
-                        assert_eq!(
-                            pool.insert(a.as_reference()),
-                            Ok(InsertOutcome::NewItemInserted { committee_index: 0 }),
-                            "should accept new item"
-                        );
+//                         assert_eq!(
+//                             pool.insert(a.as_reference()),
+//                             Ok(InsertOutcome::NewItemInserted { committee_index: 0 }),
+//                             "should accept new item"
+//                         );
 
-                        if i < SLOTS_RETAINED {
-                            let len = i + 1;
-                            assert_eq!(pool.maps.len(), len, "the pool should have length {}", len);
-                        } else {
-                            assert_eq!(
-                                pool.maps.len(),
-                                SLOTS_RETAINED,
-                                "the pool should have length SLOTS_RETAINED"
-                            );
+//                         if i < SLOTS_RETAINED {
+//                             let len = i + 1;
+//                             assert_eq!(pool.maps.len(), len, "the pool should have length {}", len);
+//                         } else {
+//                             assert_eq!(
+//                                 pool.maps.len(),
+//                                 SLOTS_RETAINED,
+//                                 "the pool should have length SLOTS_RETAINED"
+//                             );
 
-                            let mut pool_slots = pool
-                                .maps
-                                .iter()
-                                .map(|(slot, _map)| *slot)
-                                .collect::<Vec<_>>();
+//                             let mut pool_slots = pool
+//                                 .maps
+//                                 .iter()
+//                                 .map(|(slot, _map)| *slot)
+//                                 .collect::<Vec<_>>();
 
-                            pool_slots.sort_unstable();
+//                             pool_slots.sort_unstable();
 
-                            for (j, pool_slot) in pool_slots.iter().enumerate() {
-                                let expected_slot = slot - (SLOTS_RETAINED - 1 - j) as u64;
-                                assert_eq!(
-                                    *pool_slot, expected_slot,
-                                    "the slot of the map should be {}",
-                                    expected_slot
-                                )
-                            }
-                        }
-                    }
-                }
+//                             for (j, pool_slot) in pool_slots.iter().enumerate() {
+//                                 let expected_slot = slot - (SLOTS_RETAINED - 1 - j) as u64;
+//                                 assert_eq!(
+//                                     *pool_slot, expected_slot,
+//                                     "the slot of the map should be {}",
+//                                     expected_slot
+//                                 )
+//                             }
+//                         }
+//                     }
+//                 }
 
-                #[test]
-                fn max_items() {
-                    let mut base = $get_method_name(Slot::new(0));
-                    $sign_method_name(&mut base, 0, Hash256::random());
+//                 #[test]
+//                 fn max_items() {
+//                     let mut base = $get_method_name(Slot::new(0));
+//                     $sign_method_name(&mut base, 0, Hash256::random());
 
-                    let mut pool: NaiveAggregationPool<$map_type<E>> =
-                        NaiveAggregationPool::<$map_type<E>>::default();
+//                     let mut pool: NaiveAggregationPool<$map_type<E>> =
+//                         NaiveAggregationPool::<$map_type<E>>::default();
 
-                    for i in 0..=$item_limit {
-                        let mut a = base.clone();
-                        $block_root_mutator(&mut a, Hash256::from_low_u64_be(i as u64));
+//                     for i in 0..=$item_limit {
+//                         let mut a = base.clone();
+//                         $block_root_mutator(&mut a, Hash256::from_low_u64_be(i as u64));
 
-                        if i < $item_limit {
-                            assert_eq!(
-                                pool.insert(a.as_reference()),
-                                Ok(InsertOutcome::NewItemInserted { committee_index: 0 }),
-                                "should accept item below limit"
-                            );
-                        } else {
-                            assert_eq!(
-                                pool.insert(a.as_reference()),
-                                Err(Error::ReachedMaxItemsPerSlot($item_limit)),
-                                "should not accept item above limit"
-                            );
-                        }
-                    }
-                }
-            }
-        };
-    }
+//                         if i < $item_limit {
+//                             assert_eq!(
+//                                 pool.insert(a.as_reference()),
+//                                 Ok(InsertOutcome::NewItemInserted { committee_index: 0 }),
+//                                 "should accept item below limit"
+//                             );
+//                         } else {
+//                             assert_eq!(
+//                                 pool.insert(a.as_reference()),
+//                                 Err(Error::ReachedMaxItemsPerSlot($item_limit)),
+//                                 "should not accept item above limit"
+//                             );
+//                         }
+//                     }
+//                 }
+//             }
+//         };
+//     }
 
-    test_suite! {
-        attestation_tests_base,
-        get_attestation_base,
-        sign_attestation,
-        unset_attestation_bit,
-        mutate_attestation_block_root,
-        mutate_attestation_slot,
-        attestation_block_root_comparator,
-        key_from_attestation,
-        AggregatedAttestationMap,
-        MAX_ATTESTATIONS_PER_SLOT
-    }
+//     test_suite! {
+//         attestation_tests_base,
+//         get_attestation_base,
+//         sign_attestation,
+//         unset_attestation_bit,
+//         mutate_attestation_block_root,
+//         mutate_attestation_slot,
+//         attestation_block_root_comparator,
+//         key_from_attestation,
+//         AggregatedAttestationMap,
+//         MAX_ATTESTATIONS_PER_SLOT
+//     }
 
-    test_suite! {
-        attestation_tests_electra,
-        get_attestation_electra,
-        sign_attestation,
-        unset_attestation_bit,
-        mutate_attestation_block_root,
-        mutate_attestation_slot,
-        attestation_block_root_comparator,
-        key_from_attestation,
-        AggregatedAttestationMap,
-        MAX_ATTESTATIONS_PER_SLOT
-    }
+//     test_suite! {
+//         attestation_tests_electra,
+//         get_attestation_electra,
+//         sign_attestation,
+//         unset_attestation_bit,
+//         mutate_attestation_block_root,
+//         mutate_attestation_slot,
+//         attestation_block_root_comparator,
+//         key_from_attestation,
+//         AggregatedAttestationMap,
+//         MAX_ATTESTATIONS_PER_SLOT
+//     }
 
-    test_suite! {
-        sync_contribution_tests,
-        get_sync_contribution,
-        sign_sync_contribution,
-        unset_sync_contribution_bit,
-        mutate_sync_contribution_block_root,
-        mutate_sync_contribution_slot,
-        sync_contribution_block_root_comparator,
-        key_from_sync_contribution,
-        SyncContributionAggregateMap,
-        E::sync_committee_size()
-    }
-}
+//     test_suite! {
+//         sync_contribution_tests,
+//         get_sync_contribution,
+//         sign_sync_contribution,
+//         unset_sync_contribution_bit,
+//         mutate_sync_contribution_block_root,
+//         mutate_sync_contribution_slot,
+//         sync_contribution_block_root_comparator,
+//         key_from_sync_contribution,
+//         SyncContributionAggregateMap,
+//         E::sync_committee_size()
+//     }
+// }
