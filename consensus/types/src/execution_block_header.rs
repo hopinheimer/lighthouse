@@ -95,7 +95,7 @@ impl ExecutionBlockHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[rlp(trailing)]
 pub struct EncodableExecutionBlockHeader<'a> {
     pub parent_hash: &'a [u8],
