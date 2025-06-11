@@ -1,0 +1,11 @@
+[package]
+version = "0.1.0"
+name = "block-processing-program"
+edition = "2021"
+
+[dependencies]
+# alloy-sol-types = { workspace = true }
+state_processing_sp1 = { workspace = true }
+sp1-zkvm = "5.0.0"
+serde = { version = "1.0", features = ["derive"] }
+getrandom = { version = "0.2", features = ["custom"] }

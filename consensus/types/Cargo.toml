@@ -10,7 +10,7 @@ harness = false
 
 [dependencies]
 alloy-primitives = { workspace = true }
-alloy-rlp = { version = "0.3.4", features = ["derive"] }
+# alloy-rlp = { version = "0.3.4", features = ["derive"] }
 # The arbitrary dependency is enabled by default since Capella to avoid complexity introduced by
 # `AbstractExecPayload`
 arbitrary = { workspace = true, features = ["derive"] }
@@ -61,7 +61,7 @@ state_processing = { workspace = true }
 tokio = { workspace = true }
 
 [features]
-default = ["sqlite", "legacy-arith"]
+default = ["legacy-arith"]
 # Allow saturating arithmetic on slots and epochs. Enabled by default, but deprecated.
 legacy-arith = []
 sqlite = ["dep:rusqlite"]
@@ -69,3 +69,7 @@ sqlite = ["dep:rusqlite"]
 # For simplicity `Arbitrary` is now derived regardless of the feature's presence.
 arbitrary-fuzz = []
 portable = ["bls/supranational-portable"]
+
+
+# [patch.crates-io]
+# alloy-primitives = { git = "https://github.com/hopinheimer/core", branch = "main"  }
