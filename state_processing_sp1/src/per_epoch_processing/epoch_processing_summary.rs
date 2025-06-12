@@ -1,5 +1,5 @@
 use super::base::{validator_statuses::InclusionInfo, TotalBalances, ValidatorStatus};
-use crate::metrics;
+// Metrics disabled for SP1 compatibility
 use std::sync::Arc;
 use types::{
     consts::altair::{TIMELY_HEAD_FLAG_INDEX, TIMELY_SOURCE_FLAG_INDEX, TIMELY_TARGET_FLAG_INDEX},

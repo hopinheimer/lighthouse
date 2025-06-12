@@ -11,7 +11,6 @@ use tree_hash_derive::TreeHash;
 ///
 /// Spec v0.12.1
 #[derive(
-    arbitrary::Arbitrary,
     Debug,
     Clone,
     PartialEq,
@@ -25,6 +24,7 @@ use tree_hash_derive::TreeHash;
     TestRandom,
     Default,
 )]
+// #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct AttestationData {
     pub slot: Slot,
     #[serde(with = "serde_utils::quoted_u64")]

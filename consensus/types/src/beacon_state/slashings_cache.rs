@@ -1,12 +1,11 @@
 use crate::{BeaconStateError, Slot, Validator};
-use arbitrary::Arbitrary;
+// arbitrary removed for SP1 compatibility
 use rpds::HashTrieSetSync as HashTrieSet;
 
 /// Persistent (cheap to clone) cache of all slashed validator indices.
-#[derive(Debug, Default, Clone, PartialEq, Arbitrary)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct SlashingsCache {
     latest_block_slot: Option<Slot>,
-    #[arbitrary(default)]
     slashed_validators: HashTrieSet<usize>,
 }
 

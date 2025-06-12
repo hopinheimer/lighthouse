@@ -1,6 +1,10 @@
 use rand::Rng;
 
+#[cfg(feature = "kzg")]
 use kzg::{KzgCommitment, KzgProof};
+
+#[cfg(not(feature = "kzg"))]
+use crate::{KzgCommitment, KzgProof};
 
 use crate::beacon_block_body::KzgCommitments;
 use crate::*;

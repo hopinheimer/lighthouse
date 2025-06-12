@@ -31,11 +31,9 @@ impl From<ArithError> for Error {
     TreeHash,
     TestRandom,
     Derivative,
-    arbitrary::Arbitrary,
 )]
 #[derivative(PartialEq, Hash(bound = "E: EthSpec"))]
 #[serde(bound = "E: EthSpec")]
-#[arbitrary(bound = "E: EthSpec")]
 pub struct SyncAggregate<E: EthSpec> {
     pub sync_committee_bits: BitVector<E::SyncCommitteeSize>,
     pub sync_committee_signature: AggregateSignature,

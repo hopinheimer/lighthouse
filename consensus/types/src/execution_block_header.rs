@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 use crate::{Address, EthSpec, ExecutionPayloadRef, Hash256, Hash64, Uint256};
-use alloy_rlp::RlpEncodable;
+// use alloy_rlp::RlpEncodable;
 use metastruct::metastruct;
 
 /// Execution block header as used for RLP encoding and Keccak hashing.
@@ -95,8 +95,10 @@ impl ExecutionBlockHeader {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, RlpEncodable)]
-#[rlp(trailing)]
+#[derive(Debug, Clone, PartialEq, Eq,
+    // RlpEncodable
+    )]
+// #[rlp(trailing)]
 pub struct EncodableExecutionBlockHeader<'a> {
     pub parent_hash: &'a [u8],
     pub ommers_hash: &'a [u8],

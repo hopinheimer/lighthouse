@@ -6,24 +6,25 @@ edition = "2021"
 
 [dependencies]
 # Use exact same dependencies as original state_processing, just without rand/rayon/metrics
-arbitrary = { workspace = true, default-features = false }
+# arbitrary = { workspace = true } # Removed for SP1 compatibility
 derivative = { workspace = true }
 ethereum_hashing = { workspace = true }
-ethereum_ssz = { workspace = true, default-features = false }
-ethereum_ssz_derive = { workspace = true, default-features = false }
+ethereum_ssz = { workspace = true }
+ethereum_ssz_derive = { workspace = true }
 int_to_bytes = { workspace = true }
 integer-sqrt = "0.1.5"
-itertools = { workspace = true, default-features = false }
+itertools = { workspace = true }
 merkle_proof = { workspace = true }
 safe_arith = { workspace = true }
-smallvec = { workspace = true, default-features = false }
-ssz_types = { workspace = true, default-features = false }
-tree_hash = { workspace = true, default-features = false }
-types = { workspace = true, default-features = false, features = ["legacy-arith"] }
+smallvec = { workspace = true }
+ssz_types = { workspace = true }
+tree_hash = { workspace = true }
+types = { workspace = true, features = ["legacy-arith"], default-features = false }
 
 # SP1-compatible BLS with fake crypto
-bls = { workspace = true, default-features = false }
+bls = { workspace = true }
 
-# [features]
-# default = ["sp1"]
-# sp1 = ["types/sp1"]
+[features]
+default = []
+fake_crypto = []
+arbitrary-fuzz = []

@@ -23,20 +23,19 @@ use tree_hash_derive::TreeHash;
             Decode,
             TreeHash,
             TestRandom,
-            arbitrary::Arbitrary
         ),
         derivative(PartialEq, Eq, Hash(bound = "E: EthSpec")),
         serde(bound = "E: EthSpec"),
-        arbitrary(bound = "E: EthSpec")
     ),
     ref_attributes(derive(Debug))
 )]
 #[derive(
-    Debug, Clone, Serialize, Encode, Deserialize, TreeHash, Derivative, arbitrary::Arbitrary,
+    Debug, Clone, Serialize, Encode, Deserialize, TreeHash, Derivative
 )]
 #[derivative(PartialEq, Eq, Hash(bound = "E: EthSpec"))]
 #[serde(bound = "E: EthSpec", untagged)]
-#[arbitrary(bound = "E: EthSpec")]
+// #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
+// #[cfg_attr(feature = "arbitrary", arbitrary(bound = "E: EthSpec"))]
 #[ssz(enum_behaviour = "transparent")]
 #[tree_hash(enum_behaviour = "transparent")]
 pub struct AttesterSlashing<E: EthSpec> {

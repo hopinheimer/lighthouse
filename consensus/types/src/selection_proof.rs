@@ -6,7 +6,7 @@ use safe_arith::{ArithError, SafeArith};
 use ssz::Encode;
 use std::cmp;
 
-#[derive(arbitrary::Arbitrary, PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct SelectionProof(Signature);
 
 impl SelectionProof {

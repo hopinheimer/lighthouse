@@ -86,8 +86,4 @@ impl ExitCache {
     }
 }
 
-impl arbitrary::Arbitrary<'_> for ExitCache {
-    fn arbitrary(_u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        Ok(Self::default())
-    }
-}
+// arbitrary implementation removed for SP1 compatibility

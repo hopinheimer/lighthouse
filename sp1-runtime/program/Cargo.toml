@@ -8,4 +8,4 @@ edition = "2021"
 state_processing_sp1 = { workspace = true }
 sp1-zkvm = "5.0.0"
 serde = { version = "1.0", features = ["derive"] }
-getrandom = { version = "0.2", features = ["custom"] }
+# getrandom = { version = "0.2", features = ["custom"] } # SP1 provides this

@@ -34,10 +34,8 @@ impl From<ArithError> for Error {
     Decode,
     TreeHash,
     TestRandom,
-    arbitrary::Arbitrary,
 )]
 #[serde(bound = "E: EthSpec")]
-#[arbitrary(bound = "E: EthSpec")]
 pub struct SyncCommittee<E: EthSpec> {
     pub pubkeys: FixedVector<PublicKeyBytes, E::SyncCommitteeSize>,
     pub aggregate_pubkey: PublicKeyBytes,

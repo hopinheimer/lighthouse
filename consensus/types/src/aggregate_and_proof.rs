@@ -15,7 +15,6 @@ use tree_hash_derive::TreeHash;
     variants(Base, Electra),
     variant_attributes(
         derive(
-            arbitrary::Arbitrary,
             Debug,
             Clone,
             PartialEq,
@@ -27,7 +26,6 @@ use tree_hash_derive::TreeHash;
             TreeHash,
         ),
         serde(bound = "E: EthSpec"),
-        arbitrary(bound = "E: EthSpec"),
     ),
     ref_attributes(
         derive(Debug, PartialEq, TreeHash, Serialize,),
@@ -37,13 +35,13 @@ use tree_hash_derive::TreeHash;
     map_ref_into(AttestationRef)
 )]
 #[derive(
-    arbitrary::Arbitrary, Debug, Clone, PartialEq, Serialize, Deserialize, Encode, TreeHash,
+    Debug, Clone, PartialEq, Serialize, Deserialize, Encode, TreeHash,
 )]
 #[serde(untagged)]
 #[tree_hash(enum_behaviour = "transparent")]
 #[ssz(enum_behaviour = "transparent")]
 #[serde(bound = "E: EthSpec", deny_unknown_fields)]
-#[arbitrary(bound = "E: EthSpec")]
+// #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct AggregateAndProof<E: EthSpec> {
     /// The index of the validator that created the attestation.
     #[serde(with = "serde_utils::quoted_u64")]

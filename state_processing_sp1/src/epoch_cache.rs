@@ -1,7 +1,7 @@
 use crate::common::altair::BaseRewardPerIncrement;
 use crate::common::base::SqrtTotalActiveBalance;
 use crate::common::{altair, base};
-use crate::metrics;
+// Metrics disabled for SP1 compatibility
 use safe_arith::SafeArith;
 use types::epoch_cache::{EpochCache, EpochCacheError, EpochCacheKey};
 use types::{

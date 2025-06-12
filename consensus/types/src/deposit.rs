@@ -12,7 +12,6 @@ pub const DEPOSIT_TREE_DEPTH: usize = 32;
 ///
 /// Spec v0.12.1
 #[derive(
-    arbitrary::Arbitrary,
     Debug,
     PartialEq,
     Hash,

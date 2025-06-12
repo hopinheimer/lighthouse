@@ -9,7 +9,6 @@ use tree_hash_derive::TreeHash;
 
 /// The data upon which a `SyncCommitteeContribution` is based.
 #[derive(
-    arbitrary::Arbitrary,
     Debug,
     Clone,
     PartialEq,

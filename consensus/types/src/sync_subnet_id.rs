@@ -18,7 +18,7 @@ static SYNC_SUBNET_ID_TO_STRING: LazyLock<Vec<String>> = LazyLock::new(|| {
     v
 });
 
-#[derive(arbitrary::Arbitrary, Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SyncSubnetId(#[serde(with = "serde_utils::quoted_u64")] u64);
 

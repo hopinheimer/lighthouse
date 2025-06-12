@@ -114,7 +114,7 @@ resolver = "2"
 edition = "2021"
 
 [workspace.dependencies]
-alloy-primitives = { version = "0.8", features = ["rlp", "getrandom"] }
+alloy-primitives = { version = "1.2.0", features = ["rlp"] }
 alloy-rlp = "0.3.4"
 alloy-consensus = "1.0.9"
 anyhow = "1"
@@ -129,7 +129,7 @@ cargo_metadata = "0.19"
 clap = { version = "4.5.4", features = ["derive", "cargo", "wrap_help"] }
 # Turn off c-kzg's default features which include `blst/portable`. We can turn on blst's portable
 # feature ourselves when desired.
-c-kzg = { version = "2", default-features = false }
+c-kzg = { version = "2", default-features = false, features = ["portable"] }
 compare_fields_derive = { path = "common/compare_fields_derive" }
 criterion = "0.5"
 delay_map = "0.4"
@@ -140,9 +140,9 @@ rust_eth_kzg = "0.5.4"
 discv5 = { version = "0.9", features = ["libp2p"] }
 env_logger = "0.9"
 ethereum_hashing = "0.7.0"
-ethereum_serde_utils = "0.7"
-ethereum_ssz = "0.8.2"
-ethereum_ssz_derive = "0.8.2"
+ethereum_serde_utils = "0.8"
+ethereum_ssz = "0.9.0"
+ethereum_ssz_derive = "0.9.0"
 ethers-core = "1"
 ethers-providers = { version = "1", default-features = false }
 ethers-signers = { version = "1", default-features = false }
@@ -162,7 +162,7 @@ log = "0.4"
 logroller = "0.1.4"
 lru = "0.12"
 maplit = "1"
-milhouse = "0.5"
+milhouse = "0.6"
 mockito = "1.5.0"
 num_cpus = "1"
 parking_lot = "0.12"
@@ -171,7 +171,7 @@ prometheus = { version = "0.13", default-features = false }
 quickcheck = "1"
 quickcheck_macros = "1"
 quote = "1"
-r2d2 = "0.8"
+r2d2 = "0.8.10"
 rand = "0.8"
 rayon = "1.7"
 regex = "1"
@@ -184,7 +184,7 @@ reqwest = { version = "0.11", default-features = false, features = [
 ] }
 ring = "0.17"
 rpds = "0.11"
-rusqlite = { version = "0.28", features = ["bundled"] }
+rusqlite = { version = "0.36", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_repr = "0.1"
@@ -192,7 +192,7 @@ serde_yaml = "0.9"
 sha2 = "0.9"
 smallvec = { version = "1.11.2", features = ["arbitrary"] }
 snap = "1"
-ssz_types = "0.10"
+ssz_types = "0.11"
 strum = { version = "0.24", features = ["derive"] }
 superstruct = "0.8"
 syn = "1"
@@ -211,8 +211,8 @@ tracing-appender = "0.2"
 tracing-core = "0.1"
 tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-tree_hash = "0.9"
-tree_hash_derive = "0.9"
+tree_hash = "0.10"
+tree_hash_derive = "0.10"
 url = "2"
 uuid = { version = "0.8", features = ["serde", "v4"] }
 warp = { version = "0.3.7", default-features = false, features = ["tls"] }
@@ -280,7 +280,7 @@ store = { path = "beacon_node/store" }
 swap_or_not_shuffle = { path = "consensus/swap_or_not_shuffle" }
 system_health = { path = "common/system_health" }
 task_executor = { path = "common/task_executor" }
-types = { path = "consensus/types" }
+types = { path = "consensus/types" , default-features = false, features = ["legacy-arith"] }
 unused_port = { path = "common/unused_port" }
 validator_client = { path = "validator_client" }
 validator_dir = { path = "common/validator_dir" }
@@ -301,6 +301,8 @@ incremental = false
 
 [patch.crates-io]
 quick-protobuf = { git = "https://github.com/sigp/quick-protobuf.git", rev = "681f413312404ab6e51f0b46f39b0075c6f4ebfd" }
-alloy-primitives = { git = "https://github.com/hopinheimer/core", branch = "main"  }
+getrandom = { git = "https://github.com/rust-random/getrandom", branch = "master" }
+alloy-primitives = { git = "https://github.com/hopinheimer/core", branch = "main" }
 rusty-fork = { git = "https://github.com/hopinheimer/rusty-fork", branch = "master"  }
 proptest = { git = "https://github.com/hopinheimer/proptest", branch = "purge-rusty-fork" }
+milhouse = { git = "https://github.com/hopinheimer/milhouse", branch = "zkvm-compile" }

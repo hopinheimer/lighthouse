@@ -8,7 +8,6 @@ use ssz::{Decode, DecodeError, Encode};
 use std::fmt;
 
 #[derive(
-    arbitrary::Arbitrary,
     Default,
     Clone,
     Copy,

@@ -10,11 +10,11 @@ name = "slashing_protection_tests"
 path = "tests/main.rs"
 
 [dependencies]
-arbitrary = { workspace = true, features = ["derive"] }
+# arbitrary = { workspace = true, features = ["derive"] } # removed for SP1 compatibility
 ethereum_serde_utils = { workspace = true }
 filesystem = { workspace = true }
 r2d2 = { workspace = true }
-r2d2_sqlite = "0.21.0"
+r2d2_sqlite = "0.30.0"
 rusqlite = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -26,5 +26,5 @@ types = { workspace = true }
 rayon = { workspace = true }
 
 [features]
-arbitrary-fuzz = ["types/arbitrary-fuzz"]
+# arbitrary-fuzz removed for SP1 compatibility
 portable = ["types/portable"]

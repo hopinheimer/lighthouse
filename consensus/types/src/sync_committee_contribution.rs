@@ -24,10 +24,8 @@ pub enum Error {
     Decode,
     TreeHash,
     TestRandom,
-    arbitrary::Arbitrary,
 )]
 #[serde(bound = "E: EthSpec")]
-#[arbitrary(bound = "E: EthSpec")]
 pub struct SyncCommitteeContribution<E: EthSpec> {
     pub slot: Slot,
     pub beacon_block_root: Hash256,

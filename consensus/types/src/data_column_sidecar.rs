@@ -4,8 +4,15 @@ use crate::BeaconStateError;
 use crate::{BeaconBlockHeader, Epoch, EthSpec, Hash256, SignedBeaconBlockHeader, Slot};
 use bls::Signature;
 use derivative::Derivative;
+#[cfg(feature = "kzg")]
 use kzg::Error as KzgError;
+#[cfg(feature = "kzg")]
 use kzg::{KzgCommitment, KzgProof};
+
+#[cfg(not(feature = "kzg"))]
+use crate::{KzgCommitment, KzgProof};
+#[cfg(not(feature = "kzg"))]
+pub type KzgError = String;
 use merkle_proof::verify_merkle_proof;
 use safe_arith::ArithError;
 use serde::{Deserialize, Serialize};
@@ -44,10 +51,10 @@ pub type DataColumnSidecarList<E> = Vec<Arc<DataColumnSidecar<E>>>;
     TreeHash,
     TestRandom,
     Derivative,
-    arbitrary::Arbitrary,
+    // arbitrary::Arbitrary,
 )]
 #[serde(bound = "E: EthSpec")]
-#[arbitrary(bound = "E: EthSpec")]
+// #[arbitrary(bound = "E: EthSpec")]
 #[derivative(PartialEq, Eq, Hash(bound = "E: EthSpec"))]
 pub struct DataColumnSidecar<E: EthSpec> {
     #[serde(with = "serde_utils::quoted_u64")]

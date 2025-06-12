@@ -24,7 +24,6 @@ use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, Sub, SubAssign};
 
 #[derive(
-    arbitrary::Arbitrary,
     Clone,
     Copy,
     Default,
@@ -40,7 +39,6 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, Sub, SubAssi
 pub struct Slot(#[serde(with = "serde_utils::quoted_u64")] u64);
 
 #[derive(
-    arbitrary::Arbitrary,
     Clone,
     Copy,
     Default,

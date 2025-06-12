@@ -44,12 +44,10 @@ impl From<ssz_types::Error> for Error {
             Encode,
             TestRandom,
             Derivative,
-            arbitrary::Arbitrary,
             TreeHash,
         ),
         derivative(PartialEq, Hash(bound = "E: EthSpec")),
         serde(bound = "E: EthSpec", deny_unknown_fields),
-        arbitrary(bound = "E: EthSpec"),
     ),
     ref_attributes(derive(TreeHash), tree_hash(enum_behaviour = "transparent")),
     cast_error(ty = "Error", expr = "Error::IncorrectStateVariant"),
@@ -63,14 +61,13 @@ impl From<ssz_types::Error> for Error {
     Encode,
     Derivative,
     Deserialize,
-    arbitrary::Arbitrary,
     PartialEq,
 )]
 #[serde(untagged)]
 #[tree_hash(enum_behaviour = "transparent")]
 #[ssz(enum_behaviour = "transparent")]
 #[serde(bound = "E: EthSpec", deny_unknown_fields)]
-#[arbitrary(bound = "E: EthSpec")]
+// #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct Attestation<E: EthSpec> {
     #[superstruct(only(Base), partial_getter(rename = "aggregation_bits_base"))]
     pub aggregation_bits: BitList<E::MaxValidatorsPerCommittee>,
@@ -581,10 +578,10 @@ impl<E: EthSpec> ForkVersionDeserialize for Vec<Attestation<E>> {
     Encode,
     TestRandom,
     Derivative,
-    arbitrary::Arbitrary,
     TreeHash,
     PartialEq,
 )]
+// #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct SingleAttestation {
     #[serde(with = "serde_utils::quoted_u64")]
     pub committee_index: u64,

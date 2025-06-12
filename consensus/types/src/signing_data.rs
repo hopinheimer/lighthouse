@@ -8,7 +8,6 @@ use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
 #[derive(
-    arbitrary::Arbitrary,
     Debug,
     PartialEq,
     Clone,

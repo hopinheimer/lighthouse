@@ -1,8 +1,5 @@
 /// A collection of all functions that mutates the `ProgressiveBalancesCache`.
-use crate::metrics::{
-    self, PARTICIPATION_CURR_EPOCH_TARGET_ATTESTING_GWEI_PROGRESSIVE_TOTAL,
-    PARTICIPATION_PREV_EPOCH_TARGET_ATTESTING_GWEI_PROGRESSIVE_TOTAL,
-};
+// Metrics disabled for SP1 compatibility
 use crate::{BlockProcessingError, EpochProcessingError};
 // use metrics::set_gauge; // Disabled for SP1 compatibility
 use types::{
@@ -150,7 +147,7 @@ pub fn update_progressive_balances_on_epoch_transition<E: EthSpec>(
 }
 
 pub fn update_progressive_balances_metrics(
-    cache: &ProgressiveBalancesCache,
+    _cache: &ProgressiveBalancesCache,
 ) -> Result<(), BeaconStateError> {
     // Metrics disabled for SP1 compatibility
     // set_gauge(

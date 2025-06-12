@@ -6,7 +6,6 @@ use test_random_derive::TestRandom;
 use tree_hash_derive::TreeHash;
 
 #[derive(
-    arbitrary::Arbitrary,
     Debug,
     PartialEq,
     Eq,
@@ -19,6 +18,7 @@ use tree_hash_derive::TreeHash;
     TreeHash,
     TestRandom,
 )]
+// #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct BlsToExecutionChange {
     #[serde(with = "serde_utils::quoted_u64")]
     pub validator_index: u64,

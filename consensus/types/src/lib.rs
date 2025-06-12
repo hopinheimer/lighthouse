@@ -287,7 +287,90 @@ pub use bls::{
     AggregatePublicKey, AggregateSignature, Keypair, PublicKey, PublicKeyBytes, SecretKey,
     Signature, SignatureBytes,
 };
+#[cfg(feature = "kzg")]
 pub use kzg::{KzgCommitment, KzgProof, VERSIONED_HASH_VERSION_KZG};
+
+#[cfg(not(feature = "kzg"))]
+pub const VERSIONED_HASH_VERSION_KZG: u8 = 0x01;
+
+#[cfg(not(feature = "kzg"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(ssz_derive::Encode, ssz_derive::Decode)]
+#[derive(tree_hash_derive::TreeHash)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct KzgCommitment {
+    #[serde(with = "kzg_serde_utils::hex_fixed_array")]
+    pub bytes: [u8; 48],
+}
+
+#[cfg(not(feature = "kzg"))]
+impl KzgCommitment {
+    pub fn empty_for_testing() -> Self {
+        Self { bytes: [0u8; 48] }
+    }
+}
+
+#[cfg(not(feature = "kzg"))]
+impl std::fmt::Display for KzgCommitment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "0x{}", hex::encode(self.bytes))
+    }
+}
+
+#[cfg(not(feature = "kzg"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(ssz_derive::Encode, ssz_derive::Decode)]
+#[derive(tree_hash_derive::TreeHash)]
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct KzgProof {
+    #[serde(with = "kzg_serde_utils::hex_fixed_array")]
+    pub bytes: [u8; 48],
+}
+
+#[cfg(not(feature = "kzg"))]
+impl KzgProof {
+    pub fn empty() -> Self {
+        Self { bytes: [0u8; 48] }
+    }
+}
+
+#[cfg(not(feature = "kzg"))]
+mod kzg_serde_utils {
+    pub mod hex_fixed_array {
+        use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+        pub fn serialize<S: Serializer, const N: usize>(
+            array: &[u8; N],
+            serializer: S,
+        ) -> Result<S::Ok, S::Error> {
+            let hex_string = format!("0x{}", hex::encode(array));
+            hex_string.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D: Deserializer<'de>, const N: usize>(
+            deserializer: D,
+        ) -> Result<[u8; N], D::Error> {
+            let hex_string = String::deserialize(deserializer)?;
+            let hex_string = hex_string.strip_prefix("0x").unwrap_or(&hex_string);
+            
+            let bytes = hex::decode(hex_string).map_err(serde::de::Error::custom)?;
+            if bytes.len() != N {
+                return Err(serde::de::Error::custom(format!(
+                    "Expected {} bytes, got {}",
+                    N,
+                    bytes.len()
+                )));
+            }
+            
+            let mut array = [0u8; N];
+            array.copy_from_slice(&bytes);
+            Ok(array)
+        }
+    }
+}
+
 pub use milhouse::{self, List, Vector};
 pub use ssz_types::{typenum, typenum::Unsigned, BitList, BitVector, FixedVector, VariableList};
 pub use superstruct::superstruct;

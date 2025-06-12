@@ -11,7 +11,6 @@ use tree_hash_derive::TreeHash;
 ///
 /// Spec v0.11
 #[derive(
-    arbitrary::Arbitrary,
     Debug,
     Clone,
     PartialEq,

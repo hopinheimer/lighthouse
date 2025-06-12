@@ -2,7 +2,7 @@ use crate::{ChainSpec, Epoch, Validator};
 use std::collections::BTreeSet;
 
 /// Activation queue computed during epoch processing for use in the *next* epoch.
-#[derive(Debug, PartialEq, Eq, Default, Clone, arbitrary::Arbitrary)]
+#[derive(Debug, PartialEq, Eq, Default, Clone)]
 pub struct ActivationQueue {
     /// Validators represented by `(activation_eligibility_epoch, index)` in sorted order.
     ///

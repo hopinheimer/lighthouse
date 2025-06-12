@@ -4,20 +4,7 @@
 #![no_main]
 sp1_zkvm::entrypoint!(main);
 
-// Custom getrandom implementation for SP1 zkVM
-use getrandom::Error;
-
-fn sp1_getrandom(dest: &mut [u8]) -> Result<(), Error> {
-    // SP1 zkVM doesn't support true randomness, but we can use a deterministic source
-    // For cryptographic operations in zkVM, deterministic "randomness" is often acceptable
-    // since the proof system ensures correctness regardless
-    for (i, byte) in dest.iter_mut().enumerate() {
-        *byte = (i as u8).wrapping_mul(0x9e).wrapping_add(0x37);
-    }
-    Ok(())
-}
-
-getrandom::register_custom_getrandom!(sp1_getrandom);
+// SP1 zkVM provides its own getrandom implementation
 
 use serde::{Deserialize, Serialize};
 

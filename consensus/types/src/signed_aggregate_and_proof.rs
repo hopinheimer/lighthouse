@@ -21,7 +21,6 @@ use tree_hash_derive::TreeHash;
     variants(Base, Electra),
     variant_attributes(
         derive(
-            arbitrary::Arbitrary,
             Debug,
             Clone,
             PartialEq,
@@ -33,19 +32,17 @@ use tree_hash_derive::TreeHash;
             TreeHash,
         ),
         serde(bound = "E: EthSpec"),
-        arbitrary(bound = "E: EthSpec"),
     ),
     map_into(Attestation),
     map_ref_into(AggregateAndProofRef)
 )]
 #[derive(
-    arbitrary::Arbitrary, Debug, Clone, PartialEq, Serialize, Deserialize, Encode, TreeHash,
+    Debug, Clone, PartialEq, Serialize, Deserialize, Encode, TreeHash,
 )]
 #[serde(untagged)]
 #[tree_hash(enum_behaviour = "transparent")]
 #[ssz(enum_behaviour = "transparent")]
 #[serde(bound = "E: EthSpec", deny_unknown_fields)]
-#[arbitrary(bound = "E: EthSpec")]
 pub struct SignedAggregateAndProof<E: EthSpec> {
     /// The `AggregateAndProof` that was signed.
     #[superstruct(flatten)]

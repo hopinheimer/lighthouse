@@ -19,9 +19,7 @@ use tree_hash_derive::TreeHash;
     Decode,
     TreeHash,
     TestRandom,
-    arbitrary::Arbitrary,
 )]
-#[arbitrary(bound = "E: EthSpec")]
 pub struct PendingAttestation<E: EthSpec> {
     pub aggregation_bits: BitList<E::MaxValidatorsPerCommittee>,
     pub data: AttestationData,

@@ -371,11 +371,7 @@ where
     active
 }
 
-impl arbitrary::Arbitrary<'_> for CommitteeCache {
-    fn arbitrary(_u: &mut arbitrary::Unstructured<'_>) -> arbitrary::Result<Self> {
-        Ok(Self::default())
-    }
-}
+// arbitrary implementation removed for SP1 compatibility
 
 /// This is a shim struct to ensure that we can encode a `Vec<Option<NonZeroUsize>>` an SSZ union
 /// with a four-byte selector. The SSZ specification changed from four bytes to one byte during 2021

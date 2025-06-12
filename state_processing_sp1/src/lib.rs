@@ -14,7 +14,6 @@
 
 #[macro_use]
 mod macros;
-mod metrics;
 
 pub mod all_caches;
 pub mod block_replayer;

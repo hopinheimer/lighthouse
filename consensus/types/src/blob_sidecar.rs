@@ -7,9 +7,40 @@ use crate::{
 };
 use bls::Signature;
 use derivative::Derivative;
+#[cfg(feature = "kzg")]
 use kzg::{Blob as KzgBlob, Kzg, KzgCommitment, KzgProof, BYTES_PER_BLOB, BYTES_PER_FIELD_ELEMENT};
+
+#[cfg(not(feature = "kzg"))]
+use crate::{KzgCommitment, KzgProof};
+#[cfg(not(feature = "kzg"))]
+pub const BYTES_PER_BLOB: usize = 131072;
+#[cfg(not(feature = "kzg"))]
+pub const BYTES_PER_FIELD_ELEMENT: usize = 32;
+#[cfg(not(feature = "kzg"))]
+pub type KzgBlob = [u8; BYTES_PER_BLOB];
+
+#[cfg(not(feature = "kzg"))]
+pub trait KzgBlobExt {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> where Self: Sized;
+}
+
+#[cfg(not(feature = "kzg"))]
+impl KzgBlobExt for KzgBlob {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() != BYTES_PER_BLOB {
+            return Err(format!(
+                "Invalid blob length: expected {}, got {}",
+                BYTES_PER_BLOB,
+                bytes.len()
+            ));
+        }
+        let mut blob = [0u8; BYTES_PER_BLOB];
+        blob.copy_from_slice(bytes);
+        Ok(blob)
+    }
+}
+
 use merkle_proof::{merkle_root_from_branch, verify_merkle_proof, MerkleTreeError};
-use rand::Rng;
 use safe_arith::ArithError;
 use serde::{Deserialize, Serialize};
 use ssz::Encode;
@@ -52,10 +83,10 @@ impl Ord for BlobIdentifier {
     TreeHash,
     TestRandom,
     Derivative,
-    arbitrary::Arbitrary,
+    // arbitrary::Arbitrary,
 )]
 #[serde(bound = "E: EthSpec")]
-#[arbitrary(bound = "E: EthSpec")]
+// #[arbitrary(bound = "E: EthSpec")]
 #[derivative(PartialEq, Eq, Hash(bound = "E: EthSpec"))]
 pub struct BlobSidecar<E: EthSpec> {
     #[serde(with = "serde_utils::quoted_u64")]
@@ -239,6 +270,7 @@ impl<E: EthSpec> BlobSidecar<E> {
         )
     }
 
+    #[cfg(feature = "kzg")]
     pub fn random_valid<R: Rng>(rng: &mut R, kzg: &Kzg) -> Result<Self, String> {
         let mut blob_bytes = vec![0u8; BYTES_PER_BLOB];
         rng.fill_bytes(&mut blob_bytes);

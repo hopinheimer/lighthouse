@@ -9,7 +9,7 @@ use superstruct::superstruct;
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-#[derive(arbitrary::Arbitrary, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct SignedBeaconBlockHash(Hash256);
 
 impl fmt::Debug for SignedBeaconBlockHash {
@@ -49,23 +49,20 @@ impl From<SignedBeaconBlockHash> for Hash256 {
             Decode,
             TreeHash,
             Derivative,
-            arbitrary::Arbitrary
         ),
         derivative(PartialEq, Hash(bound = "E: EthSpec")),
         serde(bound = "E: EthSpec, Payload: AbstractExecPayload<E>"),
-        arbitrary(bound = "E: EthSpec, Payload: AbstractExecPayload<E>"),
     ),
     map_into(BeaconBlock),
     map_ref_into(BeaconBlockRef),
     map_ref_mut_into(BeaconBlockRefMut)
 )]
 #[derive(
-    Debug, Clone, Serialize, Deserialize, Encode, TreeHash, Derivative, arbitrary::Arbitrary,
+    Debug, Clone, Serialize, Deserialize, Encode, TreeHash, Derivative,
 )]
 #[derivative(PartialEq, Hash(bound = "E: EthSpec"))]
 #[serde(untagged)]
 #[serde(bound = "E: EthSpec, Payload: AbstractExecPayload<E>")]
-#[arbitrary(bound = "E: EthSpec, Payload: AbstractExecPayload<E>")]
 #[tree_hash(enum_behaviour = "transparent")]
 #[ssz(enum_behaviour = "transparent")]
 pub struct SignedBeaconBlock<E: EthSpec, Payload: AbstractExecPayload<E> = FullPayload<E>> {

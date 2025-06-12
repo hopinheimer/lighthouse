@@ -18,7 +18,6 @@ pub type ConsolidationRequests<E> =
     VariableList<ConsolidationRequest, <E as EthSpec>::MaxConsolidationRequestsPerPayload>;
 
 #[derive(
-    arbitrary::Arbitrary,
     Debug,
     Derivative,
     Default,
@@ -31,7 +30,6 @@ pub type ConsolidationRequests<E> =
     TestRandom,
 )]
 #[serde(bound = "E: EthSpec")]
-#[arbitrary(bound = "E: EthSpec")]
 #[derivative(PartialEq, Eq, Hash(bound = "E: EthSpec"))]
 pub struct ExecutionRequests<E: EthSpec> {
     pub deposits: DepositRequests<E>,

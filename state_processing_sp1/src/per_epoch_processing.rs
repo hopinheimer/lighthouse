@@ -1,6 +1,6 @@
 #![deny(clippy::wildcard_imports)]
 
-use crate::metrics;
+// Metrics disabled for SP1 compatibility
 pub use epoch_processing_summary::{EpochProcessingSummary, ParticipationEpochSummary};
 use errors::EpochProcessingError as Error;
 pub use justification_and_finalization_state::JustificationAndFinalizationState;

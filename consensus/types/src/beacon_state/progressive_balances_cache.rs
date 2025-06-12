@@ -6,19 +6,21 @@ use crate::{
     },
     BeaconState, BeaconStateError, ChainSpec, Epoch, EthSpec, ParticipationFlags,
 };
-use arbitrary::Arbitrary;
+// arbitrary removed for SP1 compatibility
 use safe_arith::SafeArith;
 
 /// This cache keeps track of the accumulated target attestation balance for the current & previous
 /// epochs. The cached values can be utilised by fork choice to calculate unrealized justification
 /// and finalization instead of converting epoch participation arrays to balances for each block we
 /// process.
-#[derive(Default, Debug, PartialEq, Arbitrary, Clone)]
+#[derive(Default, Debug, PartialEq, Clone)]
+// #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct ProgressiveBalancesCache {
     inner: Option<Inner>,
 }
 
-#[derive(Debug, PartialEq, Arbitrary, Clone)]
+#[derive(Debug, PartialEq, Clone)]
+// #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 struct Inner {
     pub current_epoch: Epoch,
     pub previous_epoch_cache: EpochTotalBalances,
@@ -26,7 +28,8 @@ struct Inner {
 }
 
 /// Caches the participation values for one epoch (either the previous or current).
-#[derive(PartialEq, Debug, Clone, Arbitrary)]
+#[derive(PartialEq, Debug, Clone)]
+// #[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 pub struct EpochTotalBalances {
     /// Stores the sum of the balances for all validators in `self.unslashed_participating_indices`
     /// for all flags in `NUM_FLAG_INDICES`.

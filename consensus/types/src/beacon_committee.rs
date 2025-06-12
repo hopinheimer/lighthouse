@@ -17,7 +17,8 @@ impl BeaconCommittee<'_> {
     }
 }
 
-#[derive(arbitrary::Arbitrary, Default, Clone, Debug, PartialEq)]
+#[derive(Default, Clone, Debug, PartialEq)]
+// #[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct OwnedBeaconCommittee {
     pub slot: Slot,
     pub index: CommitteeIndex,
