@@ -1,4 +1,4 @@
-.PHONY: tests
+.PHONY: tests sp1-build sp1-execute sp1-execute-latest sp1-prove sp1-prove-latest sp1-test sp1-clean sp1-test-full sp1-help
 
 EF_TESTS = "testing/ef_tests"
 STATE_TRANSITION_VECTORS = "testing/state_transition_vectors"
@@ -95,6 +95,78 @@ build-release-tarballs:
 	$(call tarball_release_binary,$(BUILD_PATH_X86_64),$(X86_64_TAG),"")
 	$(MAKE) build-aarch64
 	$(call tarball_release_binary,$(BUILD_PATH_AARCH64),$(AARCH64_TAG),"")
+
+# SP1 Runtime targets for zero-knowledge proof generation
+#
+# PREREQUISITES:
+# - SP1 must be installed and available in PATH
+#   Install with: curl -L https://sp1.succinct.xyz | bash && sp1up
+# - These targets must be run from the lighthouse root directory
+#
+# USAGE EXAMPLES:
+#   make sp1-build              # Build the SP1 program
+#   make sp1-execute            # Quick test with dummy data
+#   make sp1-prove              # Generate and verify proof
+#   make sp1-test               # Run full test suite
+#   ETH_RPC_URL=<url> make sp1-prove-latest  # Use custom RPC endpoint
+#
+# The SP1 runtime provides zero-knowledge proof capabilities for Lighthouse
+# beacon block processing using the SP1 zkVM.
+
+# Build the SP1 program for zero-knowledge execution
+sp1-build:
+	cd sp1-runtime/program && cargo prove build
+
+# Execute SP1 program with dummy data (fast execution for testing)
+sp1-execute:
+	cd sp1-runtime/script && RUST_LOG=info cargo run --release -- --execute --state-size=100
+
+# Execute SP1 program with latest Ethereum block data
+sp1-execute-latest:
+	cd sp1-runtime/script && RUST_LOG=info ETH_RPC_URL="https://eth.llamarpc.com" cargo run --release -- --execute --use-latest-block
+
+# Generate and verify a zero-knowledge proof with dummy data
+sp1-prove:
+	cd sp1-runtime/script && RUST_LOG=info cargo run --release -- --prove --state-size=50
+
+# Generate and verify a zero-knowledge proof with latest Ethereum block data
+sp1-prove-latest:
+	cd sp1-runtime/script && RUST_LOG=info ETH_RPC_URL="https://eth.llamarpc.com" cargo run --release -- --prove --use-latest-block
+
+# Run SP1 tests to verify the integration works correctly
+sp1-test: sp1-build sp1-execute sp1-prove
+
+# Clean SP1 artifacts
+sp1-clean:
+	cd sp1-runtime/program && cargo clean
+	cd sp1-runtime/script && cargo clean
+
+# Full SP1 pipeline test with latest block (requires network access)
+sp1-test-full: sp1-build sp1-execute-latest sp1-prove-latest
+
+# Show help for SP1 targets
+sp1-help:
+	@echo "SP1 Runtime Targets:"
+	@echo "  sp1-build          - Build the SP1 program for zero-knowledge execution"
+	@echo "  sp1-execute        - Execute SP1 program with dummy data (fast)"
+	@echo "  sp1-execute-latest - Execute SP1 program with latest Ethereum block"
+	@echo "  sp1-prove          - Generate and verify ZK proof with dummy data"
+	@echo "  sp1-prove-latest   - Generate and verify ZK proof with latest block"
+	@echo "  sp1-test           - Run basic SP1 test suite"
+	@echo "  sp1-test-full      - Run full SP1 pipeline test with latest block"
+	@echo "  sp1-clean          - Clean SP1 build artifacts"
+	@echo "  sp1-help           - Show this help message"
+	@echo ""
+	@echo "Prerequisites:"
+	@echo "  - Install SP1: curl -L https://sp1.succinct.xyz | bash && sp1up"
+	@echo "  - Run from lighthouse root directory"
+	@echo ""
+	@echo "Environment Variables:"
+	@echo "  ETH_RPC_URL        - Custom Ethereum RPC endpoint (default: llamarpc)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make sp1-test                              # Basic test"
+	@echo "  ETH_RPC_URL=wss://mainnet.infura.io/... make sp1-prove-latest"
 
 # Runs the full workspace tests in **release**, without downloading any additional
 # test vectors.

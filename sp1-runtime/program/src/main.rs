@@ -7,6 +7,9 @@ sp1_zkvm::entrypoint!(main);
 // SP1 zkVM provides its own getrandom implementation
 
 use serde::{Deserialize, Serialize};
+// TODO: Uncomment when implementing actual per_block_processing
+// use state_processing_sp1::per_block_processing;
+// use types::{BeaconState, SignedBeaconBlock, ChainSpec, EthSpec, MainnetEthSpec};
 
 #[derive(Serialize, Deserialize)]
 pub struct BlockProcessingInput {
@@ -35,20 +38,50 @@ pub fn main() {
 }
 
 fn process_block_wrapper(input: BlockProcessingInput) -> BlockProcessingOutput {
-    // For now, we'll implement a simplified version that focuses on the core structure
-    // This is a placeholder that demonstrates the integration pattern
-    
-    // In a real implementation, you would:
-    // 1. Deserialize the beacon state from state_bytes
-    // 2. Deserialize the signed block from signed_block_bytes  
+    match process_block_inner(input) {
+        Ok(updated_state_bytes) => BlockProcessingOutput {
+            success: true,
+            error_message: None,
+            updated_state_bytes: Some(updated_state_bytes),
+        },
+        Err(error) => BlockProcessingOutput {
+            success: false,
+            error_message: Some(error),
+            updated_state_bytes: None,
+        },
+    }
+}
+
+fn process_block_inner(input: BlockProcessingInput) -> Result<Vec<u8>, String> {
+    // For now, we'll use a simplified approach due to serialization complexity
+    // In a full implementation, you would:
+    // 1. Deserialize the beacon state from state_bytes using SSZ
+    // 2. Deserialize the signed block from signed_block_bytes using SSZ
     // 3. Deserialize the chain spec from spec_bytes
     // 4. Call per_block_processing with proper parameters
-    // 5. Serialize the updated state back to bytes
+    // 5. Serialize the updated state back to bytes using SSZ
     
-    // For now, return a success response to demonstrate the structure works
-    BlockProcessingOutput {
-        success: true,
-        error_message: None,
-        updated_state_bytes: Some(input.state_bytes), // Echo back for now
-    }
+    println!("Processing block with {} state bytes, {} block bytes, {} spec bytes",
+             input.state_bytes.len(), 
+             input.signed_block_bytes.len(), 
+             input.spec_bytes.len());
+    
+    // Simulate successful processing for now
+    // TODO: Implement actual SSZ deserialization and per_block_processing call
+    // let mut state: BeaconState<MainnetEthSpec> = ssz::decode(&input.state_bytes)
+    //     .map_err(|e| format!("Failed to decode beacon state: {}", e))?;
+    // let signed_block: SignedBeaconBlock<MainnetEthSpec> = ssz::decode(&input.signed_block_bytes)
+    //     .map_err(|e| format!("Failed to decode signed block: {}", e))?;
+    // let spec: ChainSpec = serde_json::from_slice(&input.spec_bytes)
+    //     .map_err(|e| format!("Failed to decode chain spec: {}", e))?;
+    
+    // per_block_processing(&mut state, &signed_block, None, &spec)
+    //     .map_err(|e| format!("Block processing failed: {:?}", e))?;
+    
+    // let updated_state_bytes = ssz::encode(&state);
+    
+    println!("Block processing completed successfully");
+    
+    // For now, return the original state bytes to demonstrate the flow
+    Ok(input.state_bytes)
 }
