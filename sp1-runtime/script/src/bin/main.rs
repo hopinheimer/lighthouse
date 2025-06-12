@@ -19,11 +19,11 @@ use std::env;
 use tokio;
 use types::{
     BeaconState, SignedBeaconBlock, MainnetEthSpec, EthSpec,
-    BeaconBlock, Hash256, Slot, Eth1Data,
+    BeaconBlock, Hash256, Slot, Eth1Data, Signature,
     Validator, FullPayload, FixedBytesExtended, Epoch, PublicKeyBytes
 };
 use ssz::Encode;
-use bls::Signature;
+// use bls::Signature; // Removed to avoid zkVM compilation issues
 
 /// The ELF (executable and linkable format) file for the Succinct RISC-V zkVM.
 pub const BLOCK_PROCESSING_ELF: &[u8] = include_elf!("block-processing-program");

@@ -28,9 +28,9 @@ url = { workspace = true }
 dotenv = "0.15.0"
 clap = { version = "4.0", features = ["derive", "env"] }
 state_processing_sp1 = { path = "../../state_processing_sp1" }
-types = { workspace = true }
+types = { workspace = true, default-features = false }
 ethereum_ssz = { workspace = true }
-bls = { workspace = true }
+bls = { workspace = true, features = ["fake_crypto"], default-features = false }
 
 [build-dependencies]
 sp1-build = "5.0.0"
