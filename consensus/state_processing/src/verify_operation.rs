@@ -7,18 +7,22 @@ use crate::per_block_processing::{
     verify_proposer_slashing,
 };
 use crate::VerifySignatures;
+#[cfg(feature = "arbitrary")]
 use arbitrary::Arbitrary;
 use derivative::Derivative;
 use smallvec::{smallvec, SmallVec};
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
 use std::marker::PhantomData;
+#[cfg(feature = "test_random_derive")]
 use test_random_derive::TestRandom;
 use types::{
-    test_utils::TestRandom, AttesterSlashing, AttesterSlashingBase, AttesterSlashingOnDisk,
+    AttesterSlashing, AttesterSlashingBase, AttesterSlashingOnDisk,
     AttesterSlashingRefOnDisk, BeaconState, ChainSpec, Epoch, EthSpec, Fork, ForkVersion,
     ProposerSlashing, SignedBlsToExecutionChange, SignedVoluntaryExit,
 };
+#[cfg(feature = "test_random_derive")]
+use types::test_utils::TestRandom;
 
 const MAX_FORKS_VERIFIED_AGAINST: usize = 2;
 
@@ -39,13 +43,14 @@ pub trait TransformPersist {
 ///
 /// The inner `op` field is private, meaning instances of this type can only be constructed
 /// by calling `validate`.
-#[derive(Derivative, Debug, Clone, Arbitrary)]
+#[derive(Derivative, Debug, Clone)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
 #[derivative(
     PartialEq,
     Eq,
     Hash(bound = "T: TransformPersist + std::hash::Hash, E: EthSpec")
 )]
-#[arbitrary(bound = "T: TransformPersist + Arbitrary<'arbitrary>, E: EthSpec")]
+#[cfg_attr(feature = "arbitrary", arbitrary(bound = "T: TransformPersist + Arbitrary<'arbitrary>, E: EthSpec"))]
 pub struct SigVerifiedOp<T: TransformPersist, E: EthSpec> {
     op: T,
     verified_against: VerifiedAgainst,
@@ -133,7 +138,9 @@ struct SigVerifiedOpDecode<P: Decode> {
 ///
 /// We need to store multiple `ForkVersion`s because attester slashings contain two indexed
 /// attestations which may be signed using different versions.
-#[derive(Debug, PartialEq, Eq, Clone, Hash, Encode, Decode, TestRandom, Arbitrary)]
+#[derive(Debug, PartialEq, Eq, Clone, Hash, Encode, Decode)]
+#[cfg_attr(feature = "arbitrary", derive(Arbitrary))]
+#[cfg_attr(feature = "test_random_derive", derive(TestRandom))]
 pub struct VerifiedAgainst {
     fork_versions: SmallVec<[ForkVersion; MAX_FORKS_VERIFIED_AGAINST]>,
 }
@@ -413,7 +420,7 @@ impl TransformPersist for SignedBlsToExecutionChange {
     }
 }
 
-#[cfg(all(test, not(debug_assertions)))]
+#[cfg(all(test, not(debug_assertions), feature = "test_random_derive"))]
 mod test {
     use super::*;
     use types::{

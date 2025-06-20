@@ -1,5 +1,6 @@
 use crate::consensus_context::ConsensusContext;
 use errors::{BlockOperationError, BlockProcessingError, HeaderInvalid};
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use safe_arith::{ArithError, SafeArith, SafeArithIter};
 use signature_sets::{block_proposal_signature_set, get_pubkey_from_state, randao_signature_set};
@@ -41,9 +42,9 @@ mod verify_proposer_slashing;
 
 use crate::common::decrease_balance;
 
-use crate::common::update_progressive_balances_cache::{
-    initialize_progressive_balances_cache, update_progressive_balances_metrics,
-};
+use crate::common::update_progressive_balances_cache::initialize_progressive_balances_cache;
+#[cfg(feature = "metrics")]
+use crate::common::update_progressive_balances_cache::update_progressive_balances_metrics;
 use crate::epoch_cache::initialize_epoch_cache;
 #[cfg(feature = "arbitrary-fuzz")]
 use arbitrary::Arbitrary;
@@ -188,6 +189,7 @@ pub fn per_block_processing<E: EthSpec, Payload: AbstractExecPayload<E>>(
         )?;
     }
 
+    #[cfg(feature = "metrics")]
     if is_progressive_balances_enabled(state) {
         update_progressive_balances_metrics(state.progressive_balances_cache())?;
     }

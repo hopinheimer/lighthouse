@@ -10,7 +10,7 @@ env_logger = { workspace = true }
 tokio = { workspace = true }
 
 [dependencies]
-# arbitrary = { workspace = true } # removed for SP1 compatibility
+arbitrary = { workspace = true, optional = true }
 bls = { workspace = true }
 derivative = { workspace = true }
 ethereum_hashing = { workspace = true }
@@ -20,18 +20,20 @@ int_to_bytes = { workspace = true }
 integer-sqrt = "0.1.5"
 itertools = { workspace = true }
 merkle_proof = { workspace = true }
-metrics = { workspace = true }
-rand = { workspace = true }
-rayon = { workspace = true }
+metrics = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+rayon = { workspace = true, optional = true }
 safe_arith = { workspace = true }
 smallvec = { workspace = true }
 ssz_types = { workspace = true }
-test_random_derive = { path = "../../common/test_random_derive" }
+test_random_derive = { path = "../../common/test_random_derive", optional = true }
 tree_hash = { workspace = true }
 types = { workspace = true }
 
 [features]
-default = ["legacy-arith"]
+default = ["legacy-arith", "metrics", "rand", "rayon", "test_random_derive", "arbitrary"]
+arbitrary-fuzz = ["arbitrary"]
+sp1-compat = ["legacy-arith"]
 fake_crypto = ["bls/fake_crypto"]
 legacy-arith = ["types/legacy-arith"]
 # arbitrary-fuzz removed for SP1 compatibility

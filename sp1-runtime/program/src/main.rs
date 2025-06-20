@@ -7,9 +7,9 @@ sp1_zkvm::entrypoint!(main);
 // SP1 zkVM provides its own getrandom implementation
 
 use serde::{Deserialize, Serialize};
-// TODO: Uncomment when implementing actual per_block_processing
-// use state_processing_sp1::per_block_processing;
-// use types::{BeaconState, SignedBeaconBlock, ChainSpec, EthSpec, MainnetEthSpec};
+// Available for use - state_processing is now accessible
+use state_processing::per_block_processing;
+use types::{BeaconState, SignedBeaconBlock, ChainSpec, EthSpec, MainnetEthSpec};
 
 #[derive(Serialize, Deserialize)]
 pub struct BlockProcessingInput {

@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # alloy-sol-types = { workspace = true }
-state_processing_sp1 = { workspace = true }
+state_processing = { path = "../../consensus/state_processing", default-features = false, features = ["sp1-compat"] }
 sp1-zkvm = "5.0.0"
 serde = { version = "1.0", features = ["derive"] }
 # getrandom = { version = "0.2", features = ["custom"] } # SP1 provides this

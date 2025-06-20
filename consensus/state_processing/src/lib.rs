@@ -14,6 +14,7 @@
 
 #[macro_use]
 mod macros;
+#[cfg(feature = "metrics")]
 mod metrics;
 
 pub mod all_caches;

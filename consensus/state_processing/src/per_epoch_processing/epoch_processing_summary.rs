@@ -1,4 +1,5 @@
 use super::base::{validator_statuses::InclusionInfo, TotalBalances, ValidatorStatus};
+#[cfg(feature = "metrics")]
 use crate::metrics;
 use std::sync::Arc;
 use types::{
@@ -87,6 +88,7 @@ impl<E: EthSpec> ParticipationEpochSummary<E> {
 
 impl<E: EthSpec> EpochProcessingSummary<E> {
     /// Updates some Prometheus metrics with some values in `self`.
+    #[cfg(feature = "metrics")]
     pub fn observe_metrics(&self) -> Result<(), BeaconStateError> {
         metrics::set_gauge(
             &metrics::PARTICIPATION_PREV_EPOCH_HEAD_ATTESTING_GWEI_TOTAL,
@@ -105,6 +107,12 @@ impl<E: EthSpec> EpochProcessingSummary<E> {
             self.current_epoch_total_active_balance() as i64,
         );
 
+        Ok(())
+    }
+
+    /// Updates some Prometheus metrics with some values in `self`.
+    #[cfg(not(feature = "metrics"))]
+    pub fn observe_metrics(&self) -> Result<(), BeaconStateError> {
         Ok(())
     }
 

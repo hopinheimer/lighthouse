@@ -389,7 +389,8 @@ pub fn process_deposits<E: EthSpec>(
         );
     }
 
-    // Verify merkle proofs in parallel.
+    // Verify merkle proofs in parallel when rayon is available.
+    #[cfg(feature = "rayon")]
     deposits
         .par_iter()
         .enumerate()
@@ -402,6 +403,18 @@ pub fn process_deposits<E: EthSpec>(
             )
             .map_err(|e| e.into_with_index(i))
         })?;
+    
+    // Fallback to sequential processing when rayon is not available.
+    #[cfg(not(feature = "rayon"))]
+    for (i, deposit) in deposits.iter().enumerate() {
+        verify_deposit_merkle_proof(
+            state,
+            deposit,
+            state.eth1_deposit_index().safe_add(i as u64)?,
+            spec,
+        )
+        .map_err(|e| e.into_with_index(i))?;
+    }
 
     // Update the state in series.
     for deposit in deposits {

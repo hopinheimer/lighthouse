@@ -160,6 +160,8 @@ async fn fetch_latest_block_data(args: &Args) -> Result<BlockProcessingInput, Bo
         .await?;
 
     let response_json: Value = response.json().await?;
+
+    println!("{}",response_json);
     let block = response_json["result"]
         .as_object()
         .ok_or("Invalid block response")?;
@@ -197,21 +199,21 @@ async fn fetch_latest_block_data(args: &Args) -> Result<BlockProcessingInput, Bo
 fn create_dummy_beacon_state() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     // Create a minimal BeaconState for testing purposes
     let spec = &MainnetEthSpec::default_spec();
-    
+
     // Create Eth1Data (required for BeaconState::new)
     let eth1_data = Eth1Data {
         deposit_root: Hash256::zero(),
         deposit_count: 0,
         block_hash: Hash256::zero(),
     };
-    
+
     // Create a basic BeaconState with correct parameters
     let mut state = BeaconState::<MainnetEthSpec>::new(
         0,         // genesis_time
         eth1_data, // eth1_data
         &spec,     // chain spec
     );
-    
+
     // Add a few validators for realism
     for _i in 0..32 {
         let validator = Validator {
@@ -220,14 +222,14 @@ fn create_dummy_beacon_state() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
             effective_balance: 32_000_000_000, // 32 ETH in Gwei
             slashed: false,
             activation_eligibility_epoch: Epoch::new(0),
-            activation_epoch: Epoch::new(0), 
+            activation_epoch: Epoch::new(0),
             exit_epoch: Epoch::new(u64::MAX),
             withdrawable_epoch: Epoch::new(u64::MAX),
         };
         state.validators_mut().push(validator).map_err(|e| format!("Failed to add validator: {:?}", e))?;
         state.balances_mut().push(32_000_000_000).map_err(|e| format!("Failed to add balance: {:?}", e))?;
     }
-    
+
     // Serialize to bytes using SSZ encoding
     let serialized = state.as_ssz_bytes();
     Ok(serialized)
@@ -237,24 +239,24 @@ fn create_dummy_signed_beacon_block(
     execution_block: &Value,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let spec = &MainnetEthSpec::default_spec();
-    
+
     // Extract basic info from execution block
     let block_number = execution_block["result"]["number"]
         .as_str()
         .and_then(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16).ok())
         .unwrap_or(0);
-    
+
     let _slot = Slot::new(block_number);
-    
-    // Create a minimal BeaconBlock 
+
+    // Create a minimal BeaconBlock
     let beacon_block = BeaconBlock::<MainnetEthSpec, FullPayload<MainnetEthSpec>>::empty(&spec);
-    
+
     // Create SignedBeaconBlock with empty signature
     let signed_block = SignedBeaconBlock::from_block(
         beacon_block,
         Signature::empty()
     );
-    
+
     // Serialize to bytes using SSZ encoding
     let serialized = signed_block.as_ssz_bytes();
     Ok(serialized)
@@ -263,7 +265,7 @@ fn create_dummy_signed_beacon_block(
 fn create_dummy_chain_spec() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     // Create the mainnet ChainSpec
     let spec = MainnetEthSpec::default_spec();
-    
+
     // Create a simple byte representation of key ChainSpec parameters
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&spec.genesis_slot.as_u64().to_le_bytes());
@@ -272,6 +274,6 @@ fn create_dummy_chain_spec() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     bytes.extend_from_slice(&spec.max_effective_balance.to_le_bytes());
     bytes.extend_from_slice(&spec.ejection_balance.to_le_bytes());
     bytes.extend_from_slice(&spec.effective_balance_increment.to_le_bytes());
-    
+
     Ok(bytes)
 }

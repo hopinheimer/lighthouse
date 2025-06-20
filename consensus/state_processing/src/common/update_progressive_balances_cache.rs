@@ -1,14 +1,18 @@
 /// A collection of all functions that mutates the `ProgressiveBalancesCache`.
+#[cfg(feature = "metrics")]
 use crate::metrics::{
     self, PARTICIPATION_CURR_EPOCH_TARGET_ATTESTING_GWEI_PROGRESSIVE_TOTAL,
     PARTICIPATION_PREV_EPOCH_TARGET_ATTESTING_GWEI_PROGRESSIVE_TOTAL,
 };
 use crate::{BlockProcessingError, EpochProcessingError};
+#[cfg(feature = "metrics")]
 use metrics::set_gauge;
 use types::{
     is_progressive_balances_enabled, BeaconState, BeaconStateError, ChainSpec, Epoch,
-    EpochTotalBalances, EthSpec, ParticipationFlags, ProgressiveBalancesCache, Validator,
+    EpochTotalBalances, EthSpec, ParticipationFlags, Validator,
 };
+#[cfg(feature = "metrics")]
+use types::ProgressiveBalancesCache;
 
 /// Initializes the `ProgressiveBalancesCache` if it is unbuilt.
 pub fn initialize_progressive_balances_cache<E: EthSpec>(
@@ -21,6 +25,7 @@ pub fn initialize_progressive_balances_cache<E: EthSpec>(
         return Ok(());
     }
 
+    #[cfg(feature = "metrics")]
     let _timer = metrics::start_timer(&metrics::BUILD_PROGRESSIVE_BALANCES_CACHE_TIME);
 
     // Calculate the total flag balances for previous & current epoch in a single iteration.
@@ -61,6 +66,7 @@ pub fn initialize_progressive_balances_cache<E: EthSpec>(
         current_epoch_cache,
     );
 
+    #[cfg(feature = "metrics")]
     update_progressive_balances_metrics(state.progressive_balances_cache())?;
 
     Ok(())
@@ -142,12 +148,14 @@ pub fn update_progressive_balances_on_epoch_transition<E: EthSpec>(
             .progressive_balances_cache_mut()
             .on_epoch_transition(spec)?;
 
+        #[cfg(feature = "metrics")]
         update_progressive_balances_metrics(state.progressive_balances_cache())?;
     }
 
     Ok(())
 }
 
+#[cfg(feature = "metrics")]
 pub fn update_progressive_balances_metrics(
     cache: &ProgressiveBalancesCache,
 ) -> Result<(), BeaconStateError> {

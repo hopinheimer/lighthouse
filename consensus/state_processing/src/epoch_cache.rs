@@ -1,6 +1,7 @@
 use crate::common::altair::BaseRewardPerIncrement;
 use crate::common::base::SqrtTotalActiveBalance;
 use crate::common::{altair, base};
+#[cfg(feature = "metrics")]
 use crate::metrics;
 use safe_arith::SafeArith;
 use types::epoch_cache::{EpochCache, EpochCacheError, EpochCacheKey};
@@ -139,6 +140,7 @@ pub fn initialize_epoch_cache<E: EthSpec>(
         return Ok(());
     }
 
+    #[cfg(feature = "metrics")]
     let _timer = metrics::start_timer(&metrics::BUILD_EPOCH_CACHE_TIME);
 
     let current_epoch = state.current_epoch();

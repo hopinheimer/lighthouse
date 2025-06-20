@@ -27,7 +27,7 @@ tokio = { workspace = true }
 url = { workspace = true }
 dotenv = "0.15.0"
 clap = { version = "4.0", features = ["derive", "env"] }
-state_processing_sp1 = { path = "../../state_processing_sp1" }
+state_processing = { path = "../../consensus/state_processing", default-features = false, features = ["sp1-compat"] }
 types = { workspace = true, default-features = false }
 ethereum_ssz = { workspace = true }
 bls = { workspace = true, features = ["fake_crypto"], default-features = false }
