@@ -106,7 +106,6 @@ members = [
 
     "sp1-runtime/program",
     "sp1-runtime/script",
-    "state_processing_sp1",
 ]
 resolver = "2"
 
@@ -274,7 +273,6 @@ slasher = { path = "slasher", default-features = false }
 slashing_protection = { path = "validator_client/slashing_protection" }
 slot_clock = { path = "common/slot_clock" }
 state_processing = { path = "consensus/state_processing" }
-state_processing_sp1 = { path = "state_processing_sp1" }
 script = { path = "sp1-runtime/script" }
 store = { path = "beacon_node/store" }
 swap_or_not_shuffle = { path = "consensus/swap_or_not_shuffle" }

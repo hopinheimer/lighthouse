@@ -10324,26 +10324,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "state_processing_sp1"
-version = "0.2.0"
-dependencies = [
- "bls",
- "derivative",
- "ethereum_hashing",
- "ethereum_ssz",
- "ethereum_ssz_derive",
- "int_to_bytes",
- "integer-sqrt",
- "itertools 0.10.5",
- "merkle_proof",
- "safe_arith",
- "smallvec",
- "ssz_types",
- "tree_hash",
- "types",
-]
-
-[[package]]
 name = "state_transition_vectors"
 version = "0.1.0"
 dependencies = [
