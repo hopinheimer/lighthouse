@@ -1,4 +1,5 @@
+#[derive(Clone, Debug)]
 pub struct LeanConfig {
-    num_validators: u64,
-    genesis_time: u64,
+    pub num_validators: u64,
+    pub genesis_time: u64,
 }

@@ -1,7 +1,7 @@
 use futures::prelude::*;
-use gossipsub::{IdentTopic as Topic, Message, MessageId, MessageAuthenticity, ValidationMode};
-use libp2p::swarm::{NetworkBehaviour, SwarmEvent, Swarm};
-use libp2p::{identify, mdns, noise, tcp, yamux, PeerId, SwarmBuilder, identity::Keypair};
+use gossipsub::{IdentTopic as Topic, Message, MessageAuthenticity, MessageId, ValidationMode};
+use libp2p::swarm::{NetworkBehaviour, Swarm, SwarmEvent};
+use libp2p::{PeerId, SwarmBuilder, identify, identity::Keypair, mdns, noise, tcp, yamux};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
@@ -54,10 +54,7 @@ impl LeanNetworkService {
         ));
 
         // Create mDNS behavior for local peer discovery
-        let mdns = mdns::tokio::Behaviour::new(
-            mdns::Config::default(),
-            local_peer_id,
-        )?;
+        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)?;
 
         // Create the network behavior
         let behaviour = LeanNetworkBehaviour {
@@ -87,17 +84,27 @@ impl LeanNetworkService {
 
     pub async fn start_listening(&mut self, port: u16) -> Result<(), Box<dyn std::error::Error>> {
         // Listen on all interfaces on the specified port
-        self.swarm.listen_on(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
+        self.swarm
+            .listen_on(format!("/ip4/0.0.0.0/tcp/{}", port).parse()?)?;
 
         // Subscribe to the topic
-        self.swarm.behaviour_mut().gossipsub.subscribe(&self.topic)?;
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .subscribe(&self.topic)?;
         info!("Subscribed to topic: {}", self.topic);
 
         Ok(())
     }
 
-    pub async fn publish_message(&mut self, message: Vec<u8>) -> Result<MessageId, gossipsub::PublishError> {
-        self.swarm.behaviour_mut().gossipsub.publish(self.topic.clone(), message)
+    pub async fn publish_message(
+        &mut self,
+        message: Vec<u8>,
+    ) -> Result<MessageId, gossipsub::PublishError> {
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(self.topic.clone(), message)
     }
 
     pub async fn next_event(&mut self) -> SwarmEvent<LeanNetworkBehaviourEvent> {

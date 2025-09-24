@@ -3,12 +3,12 @@ mod environment;
 pub use self::environment::{LeanEnvironment, LeanEnvironmentBuilder};
 use clap::{Command, crate_version};
 use clap_utils::get_color_style;
-use lean_network::{LeanNetworkService, LeanNetworkBehaviourEvent};
+use gossipsub;
+use lean_network::{LeanNetworkBehaviourEvent, LeanNetworkService};
 use libp2p::swarm::SwarmEvent;
 use libp2p::{identify, mdns};
-use gossipsub;
 use std::time::Duration;
-use tracing::{Level, info, span, error};
+use tracing::{Level, error, info, span};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 pub struct ProductionLeanClient {}
@@ -35,11 +35,14 @@ impl ProductionLeanClient {
         info!("Starting lean consensus client");
 
         // Initialize and start the gossipsub network service
-        let mut network_service = LeanNetworkService::new().await
+        let mut network_service = LeanNetworkService::new()
+            .await
             .map_err(|e| format!("Failed to create network service: {}", e))?;
 
         // Start listening on port 9000
-        network_service.start_listening(9000).await
+        network_service
+            .start_listening(9000)
+            .await
             .map_err(|e| format!("Failed to start listening: {}", e))?;
 
         info!("Network service started, listening on port 9000");

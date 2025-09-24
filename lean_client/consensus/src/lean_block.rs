@@ -1,26 +1,30 @@
 use crate::slot::Slot;
 
 //TODO: SignedVote
+#[derive(Clone, Debug)]
 pub struct BlockBody {}
 
+#[derive(Clone, Debug, Hash)]
 pub struct LeanBlockHeader {
-    slot: Slot,
-    proposer_index: u64,
-    parent_root: [u8; 32],
-    state_root: [u8; 32],
-    body_root: [u8; 32],
+    pub slot: Slot,
+    pub proposer_index: u64,
+    pub parent_root: [u8; 32],
+    pub state_root: [u8; 32],
+    pub body_root: [u8; 32],
 }
 
+#[derive(Clone, Debug)]
 pub struct LeanBlock {
-    slot: Slot,
-    proposer_index: u64,
-    parent_root: [u8; 32],
-    state_root: [u8; 32],
-    body_root: [u8; 32],
-    block_body: BlockBody,
+    pub slot: Slot,
+    pub proposer_index: u64,
+    pub parent_root: [u8; 32],
+    pub state_root: [u8; 32],
+    pub body_root: [u8; 32],
+    pub block_body: BlockBody,
 }
 
+#[derive(Clone, Debug)]
 pub struct SignedBlock {
-    message: LeanBlock,
-    signature: [u8; 32],
+    pub message: LeanBlock,
+    pub signature: [u8; 32],
 }
