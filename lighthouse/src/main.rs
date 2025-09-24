@@ -16,7 +16,9 @@ use environment::{EnvironmentBuilder, LoggerConfig};
 use eth2_network_config::{DEFAULT_HARDCODED_NETWORK, Eth2NetworkConfig, HARDCODED_NET_NAMES};
 use ethereum_hashing::have_sha_extensions;
 use futures::TryFutureExt;
+use lean_client::{LeanEnvironmentBuilder, ProductionLeanClient};
 use lighthouse_version::VERSION;
+
 use logging::{MetricsLayer, build_workspace_filter, crit};
 use malloc_utils::configure_memory_allocator;
 use opentelemetry::trace::TracerProvider;
@@ -466,7 +468,8 @@ fn main() {
         .subcommand(beacon_node::cli_app())
         .subcommand(boot_node::cli_app())
         .subcommand(account_manager::cli_app())
-        .subcommand(validator_manager::cli_app());
+        .subcommand(validator_manager::cli_app())
+        .subcommand(lean_client::cli_app());
 
     let cli = LighthouseSubcommands::augment_subcommands(cli);
 
@@ -488,6 +491,22 @@ fn main() {
             e, DISABLE_MALLOC_TUNING_FLAG
         );
         exit(1)
+    }
+
+    let is_lean_consensus = matches.subcommand_name() == Some("lean_node");
+    // lean(manas): can be done better but for later times
+    if is_lean_consensus {
+        let builder = LeanEnvironmentBuilder::lean();
+
+        let env = builder
+            .runtime()
+            .expect("Failed to build")
+            .build()
+            .expect("Failed to build env");
+
+        let _result = env
+            .runtime
+            .block_on(async move { ProductionLeanClient::new().await });
     }
 
     let result = get_eth2_network_config(&matches).and_then(|eth2_network_config| {
@@ -920,6 +939,19 @@ fn run<E: EthSpec>(
         // TODO(clap-derive) delete this once we've fully migrated to clap derive.
         // Qt the moment this needs to exist so that we dont trigger a crit.
         Some(("validator_client", _)) => (),
+        Some(("lean_node", _)) => {
+            let builder = LeanEnvironmentBuilder::lean();
+
+            let env = builder
+                .runtime()
+                .expect("Failed to build")
+                .build()
+                .expect("Failed to build env");
+
+            let _result = env
+                .runtime
+                .block_on(async move { ProductionLeanClient::new().await });
+        }
         _ => {
             crit!("No subcommand supplied. See --help .");
             return Err("No subcommand supplied.".into());

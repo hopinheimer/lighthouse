@@ -67,6 +67,9 @@ members = [
     "crypto/kzg",
     "database_manager",
     "lcli",
+    "lean_client",
+    "lean_client/consensus",
+    "lean_client/network",
     "lighthouse",
     "lighthouse/environment",
     "slasher",
@@ -173,6 +176,9 @@ initialized_validators = { path = "validator_client/initialized_validators" }
 int_to_bytes = { path = "consensus/int_to_bytes" }
 itertools = "0.10"
 kzg = { path = "crypto/kzg" }
+lean_client = { path = "lean_client" }
+lean_consensus = { path = "lean_client/consensus" }
+lean_network = { path = "lean_client/network" }
 libsecp256k1 = "0.7"
 lighthouse_network = { path = "beacon_node/lighthouse_network" }
 lighthouse_tracing = { path = "beacon_node/lighthouse_tracing" }

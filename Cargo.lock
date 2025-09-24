@@ -1682,6 +1682,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "consensus"
+version = "0.1.0"
+
+[[package]]
 name = "console-api"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5088,6 +5092,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "lean-network"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "libp2p",
+ "libp2p-gossipsub",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "lean_client"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "clap_utils",
+ "futures",
+ "lean-network",
+ "libp2p",
+ "libp2p-gossipsub",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "leveldb"
 version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5582,6 +5612,7 @@ dependencies = [
  "ethereum_hashing",
  "futures",
  "initialized_validators",
+ "lean_client",
  "lighthouse_network",
  "lighthouse_tracing",
  "lighthouse_version",
