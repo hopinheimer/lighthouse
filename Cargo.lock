@@ -980,7 +980,6 @@ dependencies = [
  "metrics",
  "num_cpus",
  "parking_lot 0.12.3",
- "rayon",
  "serde",
  "slot_clock",
  "strum",
@@ -9263,6 +9262,8 @@ dependencies = [
  "async-channel 1.9.0",
  "futures",
  "metrics",
+ "num_cpus",
+ "rayon",
  "tokio",
  "tracing",
 ]
@@ -11196,7 +11197,7 @@ dependencies = [
 [[package]]
 name = "xdelta3"
 version = "0.1.5"
-source = "git+http://github.com/sigp/xdelta3-rs?rev=4db64086bb02e9febb584ba93b9d16bb2ae3825a#4db64086bb02e9febb584ba93b9d16bb2ae3825a"
+source = "git+https://github.com/sigp/xdelta3-rs?rev=4db64086bb02e9febb584ba93b9d16bb2ae3825a#4db64086bb02e9febb584ba93b9d16bb2ae3825a"
 dependencies = [
  "bindgen",
  "cc",
