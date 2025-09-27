@@ -69,7 +69,9 @@ members = [
     "lcli",
     "lean_client",
     "lean_client/consensus",
-    "lean_client/network",
+    "lean_client/lean_network",
+    "lean_client/lean_chain",
+    "lean_client/forkchoice",
     "lighthouse",
     "lighthouse/environment",
     "slasher",
@@ -177,8 +179,10 @@ int_to_bytes = { path = "consensus/int_to_bytes" }
 itertools = "0.10"
 kzg = { path = "crypto/kzg" }
 lean_client = { path = "lean_client" }
-lean_consensus = { path = "lean_client/consensus" }
-lean_network = { path = "lean_client/network" }
+lean-consensus = { path = "lean_client/consensus" }
+lean-network = { path = "lean_client/lean_network" }
+lean-chain = { path = "lean_client/lean_chain" }
+lean-forkchoice = { path = "lean_client/forkchoice" }
 libsecp256k1 = "0.7"
 lighthouse_network = { path = "beacon_node/lighthouse_network" }
 lighthouse_tracing = { path = "beacon_node/lighthouse_tracing" }

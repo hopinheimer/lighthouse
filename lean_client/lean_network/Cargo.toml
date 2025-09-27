@@ -8,6 +8,8 @@ gossipsub = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+lean-consensus = { path = "../consensus" }
+task_executor = { workspace = true }
 
 [dependencies.libp2p]
 version = "0.56"

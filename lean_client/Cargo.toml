@@ -8,9 +8,16 @@ clap = { workspace = true }
 clap_utils = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 gossipsub = { workspace = true }
 futures = { workspace = true }
+lean-network = { workspace = true }
+lean-consensus = { workspace = true }
+task_executor = { workspace = true }
+async-channel = { workspace = true }
+serde = { workspace = true }
+slot_clock = { workspace = true }
+environment = { workspace = true }
+types = { workspace = true }
 
 [dependencies.libp2p]
 version = "0.56"
@@ -28,5 +35,3 @@ features = [
     "mdns"
 ]
 
-[dependencies.lean-network]
-path = "./network"

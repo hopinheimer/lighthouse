@@ -1,6 +1,8 @@
 mod checkpoint;
-mod config;
+pub mod config;
 mod lean_block;
 mod slot;
-mod state;
+pub mod state;
 mod vote;
+
+pub use state::LeanState;

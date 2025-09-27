@@ -1681,10 +1681,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "consensus"
-version = "0.1.0"
-
-[[package]]
 name = "console-api"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5091,12 +5087,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "lean-chain"
+version = "0.1.0"
+
+[[package]]
+name = "lean-consensus"
+version = "0.1.0"
+
+[[package]]
+name = "lean-forkchoice"
+version = "0.1.0"
+dependencies = [
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "hashbrown 0.14.5",
+ "safe_arith",
+ "serde",
+ "types",
+]
+
+[[package]]
 name = "lean-network"
 version = "0.1.0"
 dependencies = [
  "futures",
+ "lean-consensus",
  "libp2p",
  "libp2p-gossipsub",
+ "task_executor",
  "tokio",
  "tracing",
 ]
@@ -5105,15 +5123,21 @@ dependencies = [
 name = "lean_client"
 version = "0.1.0"
 dependencies = [
+ "async-channel 1.9.0",
  "clap",
  "clap_utils",
+ "environment",
  "futures",
+ "lean-consensus",
  "lean-network",
  "libp2p",
  "libp2p-gossipsub",
+ "serde",
+ "slot_clock",
+ "task_executor",
  "tokio",
  "tracing",
- "tracing-subscriber",
+ "types",
 ]
 
 [[package]]
