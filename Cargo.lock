@@ -5093,6 +5093,16 @@ version = "0.1.0"
 [[package]]
 name = "lean-consensus"
 version = "0.1.0"
+dependencies = [
+ "ethereum_ssz",
+ "ethereum_ssz_derive",
+ "fixed_bytes",
+ "int_to_bytes",
+ "serde",
+ "tree_hash",
+ "tree_hash_derive",
+ "types",
+]
 
 [[package]]
 name = "lean-forkchoice"
