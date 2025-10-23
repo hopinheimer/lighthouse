@@ -1308,9 +1308,13 @@ impl<E: EthSpec> BeaconProcessor<E> {
                             Work::GossipAttestation { .. } => {
                                 // send the attestation process event to reprocessing queue
                                 // for delayed batching and processing
-                                if let Ok(queued_batch_attestation) = QueuedBatchAttestation::try_from(work) {
+                                if let Ok(queued_batch_attestation) =
+                                    QueuedBatchAttestation::try_from(work)
+                                {
                                     if let Err(e) = reprocess_work_tx.try_send(
-                                        ReprocessQueueMessage::BatchedAttestation(queued_batch_attestation),
+                                        ReprocessQueueMessage::BatchedAttestation(
+                                            queued_batch_attestation,
+                                        ),
                                     ) {
                                         error!(
                                             error = ?e,

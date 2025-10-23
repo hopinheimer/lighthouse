@@ -48,6 +48,8 @@ pub const ADDITIONAL_QUEUED_BLOCK_DELAY: Duration = Duration::from_millis(5);
 
 /// For how long to queue aggregated and unaggregated attestations for re-processing.
 pub const QUEUED_ATTESTATION_DELAY: Duration = Duration::from_secs(12);
+/// Batched attestation delay.
+pub const QUEUED_BATCH_ATTESTATION_DELAY: Duration = Duration::from_millis(50);
 
 /// For how long to queue light client updates for re-processing.
 pub const QUEUED_LIGHT_CLIENT_UPDATE_DELAY: Duration = Duration::from_secs(12);
@@ -177,9 +179,8 @@ pub struct IgnoredRpcBlock {
 }
 
 pub struct QueuedBatchAttestation {
-    pub beacon_block_root: Hash256,
     pub attestation: Box<GossipAttestationPackage<SingleAttestation>>,
-    pub proccess_individual:
+    pub process_individual:
         Box<dyn FnOnce(GossipAttestationPackage<SingleAttestation>) + Send + Sync>,
     pub process_batch: Box<dyn FnOnce(GossipAttestationBatch) + Send + Sync>,
 }
@@ -198,21 +199,18 @@ impl<E: EthSpec> TryFrom<WorkEvent<E>> for QueuedBatchAttestation {
     fn try_from(event: WorkEvent<E>) -> Result<Self, WorkEvent<E>> {
         match event {
             WorkEvent {
-                work: Work::GossipAttestation {
-                    attestation,
-                    process_individual,
-                    process_batch,
-                },
+                work:
+                    Work::GossipAttestation {
+                        attestation,
+                        process_individual,
+                        process_batch,
+                    },
                 ..
-            } => {
-                let beacon_block_root = attestation.attestation.data.beacon_block_root;
-                Ok(QueuedBatchAttestation {
-                    beacon_block_root,
-                    attestation,
-                    proccess_individual: process_individual,
-                    process_batch,
-                })
-            }
+            } => Ok(QueuedBatchAttestation {
+                attestation,
+                process_individual,
+                process_batch,
+            }),
 
             _ => Err(event),
         }
@@ -228,15 +226,11 @@ impl<E: EthSpec> TryFrom<Work<E>> for QueuedBatchAttestation {
                 attestation,
                 process_individual,
                 process_batch,
-            } => {
-                let beacon_block_root = attestation.attestation.data.beacon_block_root;
-                Ok(QueuedBatchAttestation {
-                    beacon_block_root,
-                    attestation,
-                    proccess_individual: process_individual,
-                    process_batch,
-                })
-            }
+            } => Ok(QueuedBatchAttestation {
+                attestation,
+                process_individual,
+                process_batch,
+            }),
 
             _ => Err(work),
         }
@@ -674,7 +668,7 @@ impl<S: SlotClock> ReprocessQueue<S> {
                 // Register the delay.
                 let delay_key = self
                     .attestations_delay_queue
-                    .insert(att_id, QUEUED_ATTESTATION_DELAY);
+                    .insert(att_id, QUEUED_BATCH_ATTESTATION_DELAY);
 
                 // Register this attestation for the corresponding root.
                 self.awaiting_attestations_per_root
@@ -759,8 +753,7 @@ impl<S: SlotClock> ReprocessQueue<S> {
                                 } else {
                                     error!(
                                         ?block_root,
-                                        att_id,
-                                        "Unknown queued aggregate for block root"
+                                        att_id, "Unknown queued aggregate for block root"
                                     );
                                 }
                             }
@@ -784,8 +777,7 @@ impl<S: SlotClock> ReprocessQueue<S> {
                                 } else {
                                     error!(
                                         ?block_root,
-                                        att_id,
-                                        "Unknown queued unaggregate for block root"
+                                        att_id, "Unknown queued unaggregate for block root"
                                     );
                                 }
                             }
@@ -799,14 +791,13 @@ impl<S: SlotClock> ReprocessQueue<S> {
                                     // Call the process_batch closure with the attestation as a batch
                                     // since the block is now available
                                     (batch_attestation.process_batch)(vec![
-                                        *batch_attestation.attestation
+                                        *batch_attestation.attestation,
                                     ]);
                                     sent_count += 1;
                                 } else {
                                     error!(
                                         ?block_root,
-                                        att_id,
-                                        "Unknown queued batched attestation for block root"
+                                        att_id, "Unknown queued batched attestation for block root"
                                     );
                                 }
                             }
@@ -928,7 +919,13 @@ impl<S: SlotClock> ReprocessQueue<S> {
 
                 // Register this attestation for the corresponding root.
                 self.awaiting_attestations_per_root
-                    .entry(queued_batch_attestation.beacon_block_root)
+                    .entry(
+                        queued_batch_attestation
+                            .attestation
+                            .attestation
+                            .data
+                            .beacon_block_root,
+                    )
                     .or_default()
                     .push(att_id);
 
@@ -1022,8 +1019,13 @@ impl<S: SlotClock> ReprocessQueue<S> {
                             error!("Invalid attestation ID for batched attestation");
                             return;
                         }
-                    }) {
-                    let beacon_block_root = batch_attestation.beacon_block_root;
+                    })
+                {
+                    let beacon_block_root = batch_attestation
+                        .attestation
+                        .attestation
+                        .data
+                        .beacon_block_root;
                     // Call the process_batch closure with the single attestation as a batch
                     // since the block was never imported and we're expiring the attestation.
                     (batch_attestation.process_batch)(vec![*batch_attestation.attestation]);
