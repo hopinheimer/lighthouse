@@ -9,6 +9,7 @@ use crate::{
     sync::{SyncMessage, manager::BlockProcessType},
 };
 use beacon_chain::block_verification_types::RpcBlock;
+use beacon_chain::custody_context::NodeCustodyType;
 use beacon_chain::data_column_verification::validate_data_column_sidecar_for_gossip;
 use beacon_chain::kzg_utils::blobs_to_data_column_sidecars;
 use beacon_chain::observed_data_sidecars::DoNotObserve;
@@ -94,20 +95,32 @@ impl TestRig {
         // This allows for testing voluntary exits without building out a massive chain.
         let mut spec = test_spec::<E>();
         spec.shard_committee_period = 2;
-        Self::new_parametric(chain_length, BeaconProcessorConfig::default(), false, spec).await
+        Self::new_parametric(
+            chain_length,
+            BeaconProcessorConfig::default(),
+            NodeCustodyType::Fullnode,
+            spec,
+        )
+        .await
     }
 
     pub async fn new_supernode(chain_length: u64) -> Self {
         // This allows for testing voluntary exits without building out a massive chain.
         let mut spec = test_spec::<E>();
         spec.shard_committee_period = 2;
-        Self::new_parametric(chain_length, BeaconProcessorConfig::default(), true, spec).await
+        Self::new_parametric(
+            chain_length,
+            BeaconProcessorConfig::default(),
+            NodeCustodyType::Supernode,
+            spec,
+        )
+        .await
     }
 
     pub async fn new_parametric(
         chain_length: u64,
         beacon_processor_config: BeaconProcessorConfig,
-        import_data_columns: bool,
+        node_custody_type: NodeCustodyType,
         spec: ChainSpec,
     ) -> Self {
         let spec = Arc::new(spec);
@@ -116,7 +129,7 @@ impl TestRig {
             .deterministic_keypairs(VALIDATOR_COUNT)
             .fresh_ephemeral_store()
             .mock_execution_layer()
-            .import_all_data_columns(import_data_columns)
+            .node_custody_type(node_custody_type)
             .chain_config(<_>::default())
             .build();
 
@@ -1610,7 +1623,7 @@ async fn test_backfill_sync_processing_rate_limiting_disabled() {
     let mut rig = TestRig::new_parametric(
         SMALL_CHAIN,
         beacon_processor_config,
-        false,
+        NodeCustodyType::Fullnode,
         test_spec::<E>(),
     )
     .await;
@@ -1675,40 +1688,11 @@ async fn test_blobs_by_range() {
             panic!("unexpected message {:?}", next);
         }
     }
-    assert_eq!(blob_count, actual_count);
-}
-
-#[tokio::test]
-async fn test_blobs_by_range_post_fulu_should_return_empty() {
-    // Only test for Fulu fork
-    if test_spec::<E>().fulu_fork_epoch.is_none() {
-        return;
-    };
-    let mut rig = TestRig::new(64).await;
-    let start_slot = 0;
-    let slot_count = 32;
-    rig.enqueue_blobs_by_range_request(start_slot, slot_count);
-
-    let mut actual_count = 0;
-
-    while let Some(next) = rig.network_rx.recv().await {
-        if let NetworkMessage::SendResponse {
-            peer_id: _,
-            response: Response::BlobsByRange(blob),
-            inbound_request_id: _,
-        } = next
-        {
-            if blob.is_some() {
-                actual_count += 1;
-            } else {
-                break;
-            }
-        } else {
-            panic!("unexpected message {:?}", next);
-        }
+    if test_spec::<E>().fulu_fork_epoch.is_some() {
+        assert_eq!(0, actual_count, "Post-Fulu should return 0 blobs");
+    } else {
+        assert_eq!(blob_count, actual_count);
     }
-    // Post-Fulu should return 0 blobs
-    assert_eq!(0, actual_count);
 }
 
 #[tokio::test]
@@ -1721,7 +1705,13 @@ async fn test_blobs_by_range_spans_fulu_fork() {
     spec.fulu_fork_epoch = Some(Epoch::new(1));
     spec.gloas_fork_epoch = Some(Epoch::new(2));
 
-    let mut rig = TestRig::new_parametric(64, BeaconProcessorConfig::default(), spec).await;
+    let mut rig = TestRig::new_parametric(
+        64,
+        BeaconProcessorConfig::default(),
+        NodeCustodyType::Fullnode,
+        spec,
+    )
+    .await;
 
     let start_slot = 16;
     // This will span from epoch 0 (Electra) to epoch 1 (Fulu)

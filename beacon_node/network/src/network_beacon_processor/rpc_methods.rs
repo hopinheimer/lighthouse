@@ -3,7 +3,7 @@ use crate::network_beacon_processor::{FUTURE_SLOT_TOLERANCE, NetworkBeaconProces
 use crate::service::NetworkMessage;
 use crate::status::ToStatusMessage;
 use crate::sync::SyncMessage;
-use beacon_chain::{BeaconChainError, BeaconChainTypes, WhenSlotSkipped};
+use beacon_chain::{BeaconChainError, BeaconChainTypes, BlockProcessStatus, WhenSlotSkipped};
 use itertools::{Itertools, process_results};
 use lighthouse_network::rpc::methods::{
     BlobsByRangeRequest, BlobsByRootRequest, DataColumnsByRangeRequest, DataColumnsByRootRequest,
@@ -310,7 +310,12 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                 let block_root = blob_id.block_root;
                 self.chain
                     .data_availability_checker
-                    .get_execution_valid_block(&block_root)
+                    .get_cached_block(&block_root)
+                    .and_then(|status| match status {
+                        BlockProcessStatus::NotValidated(block, _source) => Some(block),
+                        BlockProcessStatus::ExecutionValidated(block) => Some(block),
+                        BlockProcessStatus::Unknown => None,
+                    })
                     .or_else(|| self.chain.early_attester_cache.get_block(block_root))
                     .map(|block| (block_root, block.slot()))
             })
@@ -1199,33 +1204,42 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
 
         let request_start_slot = Slot::from(req.start_slot);
 
-        let data_availability_boundary_slot = match self.chain.data_availability_boundary() {
-            Some(boundary) => boundary.start_slot(T::EthSpec::slots_per_epoch()),
-            None => {
-                debug!("Deneb fork is disabled");
-                return Err((RpcErrorResponse::InvalidRequest, "Deneb fork is disabled"));
-            }
-        };
+        let column_data_availability_boundary_slot =
+            match self.chain.column_data_availability_boundary() {
+                Some(boundary) => boundary.start_slot(T::EthSpec::slots_per_epoch()),
+                None => {
+                    debug!("Fulu fork is disabled");
+                    return Err((RpcErrorResponse::InvalidRequest, "Fulu fork is disabled"));
+                }
+            };
 
-        let oldest_data_column_slot = self
-            .chain
-            .store
-            .get_data_column_info()
-            .oldest_data_column_slot
-            .unwrap_or(data_availability_boundary_slot);
+        let earliest_custodied_data_column_slot =
+            match self.chain.earliest_custodied_data_column_epoch() {
+                Some(earliest_custodied_epoch) => {
+                    let earliest_custodied_slot =
+                        earliest_custodied_epoch.start_slot(T::EthSpec::slots_per_epoch());
+                    // Ensure the earliest columns we serve are within the data availability window
+                    if earliest_custodied_slot < column_data_availability_boundary_slot {
+                        column_data_availability_boundary_slot
+                    } else {
+                        earliest_custodied_slot
+                    }
+                }
+                None => column_data_availability_boundary_slot,
+            };
 
-        if request_start_slot < oldest_data_column_slot {
+        if request_start_slot < earliest_custodied_data_column_slot {
             debug!(
                 %request_start_slot,
-                %oldest_data_column_slot,
-                %data_availability_boundary_slot,
-                "Range request start slot is older than data availability boundary."
+                %earliest_custodied_data_column_slot,
+                %column_data_availability_boundary_slot,
+                "Range request start slot is older than the earliest custodied data column slot."
             );
 
-            return if data_availability_boundary_slot < oldest_data_column_slot {
+            return if earliest_custodied_data_column_slot > column_data_availability_boundary_slot {
                 Err((
                     RpcErrorResponse::ResourceUnavailable,
-                    "blobs pruned within boundary",
+                    "columns pruned within boundary",
                 ))
             } else {
                 Err((
