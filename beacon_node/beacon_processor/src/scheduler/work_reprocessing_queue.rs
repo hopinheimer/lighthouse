@@ -12,6 +12,7 @@
 //! block will be re-queued until their block is imported, or until they expire.
 use crate::metrics;
 use crate::{AsyncFn, BlockingFn, Work, WorkEvent};
+use crate::{GossipAttestationBatch, GossipAttestationPackage, SingleAttestation};
 use fnv::FnvHashMap;
 use futures::task::Poll;
 use futures::{Stream, StreamExt};
@@ -114,6 +115,8 @@ pub enum ReprocessQueueMessage {
     BackfillSync(QueuedBackfillBatch),
     /// A delayed column reconstruction that needs checking
     DelayColumnReconstruction(QueuedColumnReconstruction),
+    /// A delayed attestation which will be batched for optimization.
+    BatchedAttestation(QueuedBatchAttestation),
 }
 
 /// Events sent by the scheduler once they are ready for re-processing.
@@ -172,6 +175,14 @@ pub struct IgnoredRpcBlock {
     pub process_fn: BlockingFn,
 }
 
+pub struct QueuedBatchAttestation {
+    pub beacon_block_root: Hash256,
+    pub attestation: Box<GossipAttestationPackage<SingleAttestation>>,
+    pub proccess_individual:
+        Box<dyn FnOnce(GossipAttestationPackage<SingleAttestation>) + Send + Sync>,
+    pub process_batch: Box<dyn FnOnce(GossipAttestationBatch) + Send + Sync>,
+}
+
 /// A backfill batch work that has been queued for processing later.
 pub struct QueuedBackfillBatch(pub BlockingFn);
 
@@ -179,6 +190,56 @@ pub struct QueuedColumnReconstruction {
     pub block_root: Hash256,
     pub slot: Slot,
     pub process_fn: AsyncFn,
+}
+impl<E: EthSpec> TryFrom<WorkEvent<E>> for QueuedBatchAttestation {
+    type Error = WorkEvent<E>;
+
+    fn try_from(event: WorkEvent<E>) -> Result<Self, WorkEvent<E>> {
+        match event {
+            WorkEvent {
+                work: Work::GossipAttestation {
+                    attestation,
+                    process_individual,
+                    process_batch,
+                },
+                ..
+            } => {
+                let beacon_block_root = attestation.attestation.data.beacon_block_root;
+                Ok(QueuedBatchAttestation {
+                    beacon_block_root,
+                    attestation,
+                    proccess_individual: process_individual,
+                    process_batch,
+                })
+            }
+
+            _ => Err(event),
+        }
+    }
+}
+
+impl<E: EthSpec> TryFrom<Work<E>> for QueuedBatchAttestation {
+    type Error = Work<E>;
+
+    fn try_from(work: Work<E>) -> Result<Self, Work<E>> {
+        match work {
+            Work::GossipAttestation {
+                attestation,
+                process_individual,
+                process_batch,
+            } => {
+                let beacon_block_root = attestation.attestation.data.beacon_block_root;
+                Ok(QueuedBatchAttestation {
+                    beacon_block_root,
+                    attestation,
+                    proccess_individual: process_individual,
+                    process_batch,
+                })
+            }
+
+            _ => Err(work),
+        }
+    }
 }
 
 impl<E: EthSpec> TryFrom<WorkEvent<E>> for QueuedBackfillBatch {
@@ -219,6 +280,8 @@ enum InboundEvent {
     ReadyBackfillSync(QueuedBackfillBatch),
     /// A column reconstruction that was queued is ready for processing.
     ReadyColumnReconstruction(QueuedColumnReconstruction),
+    /// An attestation batched is now ready for processing.
+    ReadyBatchedAttestation(QueuedAttestationId),
     /// A message sent to the `ReprocessQueue`
     Msg(ReprocessQueueMessage),
 }
@@ -241,6 +304,8 @@ struct ReprocessQueue<S> {
     lc_updates_delay_queue: DelayQueue<QueuedLightClientUpdateId>,
     /// Queue to manage scheduled column reconstructions.
     column_reconstructions_delay_queue: DelayQueue<QueuedColumnReconstruction>,
+    /// Queue to batch attestatio with a delay
+    batched_attestation_queue: DelayQueue<QueuedAttestationId>,
 
     /* Queued items */
     /// Queued blocks.
@@ -249,7 +314,9 @@ struct ReprocessQueue<S> {
     queued_aggregates: FnvHashMap<usize, (QueuedAggregate, DelayKey)>,
     /// Queued attestations.
     queued_unaggregates: FnvHashMap<usize, (QueuedUnaggregate, DelayKey)>,
-    /// Attestations (aggregated and unaggregated) per root.
+    /// Queued batch attestations.
+    queued_batch_attestations: FnvHashMap<usize, (QueuedBatchAttestation, DelayKey)>,
+    /// Attestations (aggregated, unaggregated, and batched) per root.
     awaiting_attestations_per_root: HashMap<Hash256, Vec<QueuedAttestationId>>,
     /// Queued Light Client Updates.
     queued_lc_updates: FnvHashMap<usize, (QueuedLightClientUpdate, DelayKey)>,
@@ -278,6 +345,7 @@ pub type QueuedLightClientUpdateId = usize;
 enum QueuedAttestationId {
     Aggregate(usize),
     Unaggregate(usize),
+    Batched(usize),
 }
 
 impl QueuedAggregate {
@@ -354,6 +422,17 @@ impl<S: SlotClock> Stream for ReprocessQueue<S> {
             Poll::Ready(None) | Poll::Pending => (),
         }
 
+        match self.batched_attestation_queue.poll_expired(cx) {
+            Poll::Ready(Some(attestation_id)) => {
+                return Poll::Ready(Some(InboundEvent::ReadyBatchedAttestation(
+                    attestation_id.into_inner(),
+                )));
+            }
+            // `Poll::Ready(None)` means that there are no more entries in the delay queue and we
+            // will continue to get this result until something else is added into the queue.
+            Poll::Ready(None) | Poll::Pending => (),
+        }
+
         if let Some(next_backfill_batch_event) = self.next_backfill_batch_event.as_mut() {
             match next_backfill_batch_event.as_mut().poll(cx) {
                 Poll::Ready(_) => {
@@ -419,12 +498,14 @@ impl<S: SlotClock> ReprocessQueue<S> {
             gossip_block_delay_queue: DelayQueue::new(),
             rpc_block_delay_queue: DelayQueue::new(),
             attestations_delay_queue: DelayQueue::new(),
+            batched_attestation_queue: DelayQueue::new(),
             lc_updates_delay_queue: DelayQueue::new(),
             column_reconstructions_delay_queue: DelayQueue::new(),
             queued_gossip_block_roots: HashSet::new(),
             queued_lc_updates: FnvHashMap::default(),
             queued_aggregates: FnvHashMap::default(),
             queued_unaggregates: FnvHashMap::default(),
+            queued_batch_attestations: FnvHashMap::default(),
             awaiting_attestations_per_root: HashMap::new(),
             awaiting_lc_updates_per_parent_root: HashMap::new(),
             queued_backfill_batches: Vec::new(),
@@ -656,37 +737,78 @@ impl<S: SlotClock> ReprocessQueue<S> {
                             &metrics::BEACON_PROCESSOR_REPROCESSING_QUEUE_MATCHED_ATTESTATIONS,
                         );
 
-                        if let Some((work, delay_key)) = match id {
-                            QueuedAttestationId::Aggregate(id) => self
-                                .queued_aggregates
-                                .remove(&id)
-                                .map(|(aggregate, delay_key)| {
-                                    (ReadyWork::Aggregate(aggregate), delay_key)
-                                }),
-                            QueuedAttestationId::Unaggregate(id) => self
-                                .queued_unaggregates
-                                .remove(&id)
-                                .map(|(unaggregate, delay_key)| {
-                                    (ReadyWork::Unaggregate(unaggregate), delay_key)
-                                }),
-                        } {
-                            // Remove the delay.
-                            self.attestations_delay_queue.remove(&delay_key);
+                        match id {
+                            QueuedAttestationId::Aggregate(att_id) => {
+                                if let Some((aggregate, delay_key)) =
+                                    self.queued_aggregates.remove(&att_id)
+                                {
+                                    // Remove the delay.
+                                    self.attestations_delay_queue.remove(&delay_key);
 
-                            // Send the work.
-                            if self.ready_work_tx.try_send(work).is_err() {
-                                failed_to_send_count += 1;
-                            } else {
-                                sent_count += 1;
+                                    // Send the work.
+                                    if self
+                                        .ready_work_tx
+                                        .try_send(ReadyWork::Aggregate(aggregate))
+                                        .is_err()
+                                    {
+                                        failed_to_send_count += 1;
+                                    } else {
+                                        sent_count += 1;
+                                    }
+                                } else {
+                                    error!(
+                                        ?block_root,
+                                        att_id,
+                                        "Unknown queued aggregate for block root"
+                                    );
+                                }
                             }
-                        } else {
-                            // There is a mismatch between the attestation ids registered for this
-                            // root and the queued attestations. This should never happen.
-                            error!(
-                                ?block_root,
-                                att_id = ?id,
-                                "Unknown queued attestation for block root"
-                            );
+                            QueuedAttestationId::Unaggregate(att_id) => {
+                                if let Some((unaggregate, delay_key)) =
+                                    self.queued_unaggregates.remove(&att_id)
+                                {
+                                    // Remove the delay.
+                                    self.attestations_delay_queue.remove(&delay_key);
+
+                                    // Send the work.
+                                    if self
+                                        .ready_work_tx
+                                        .try_send(ReadyWork::Unaggregate(unaggregate))
+                                        .is_err()
+                                    {
+                                        failed_to_send_count += 1;
+                                    } else {
+                                        sent_count += 1;
+                                    }
+                                } else {
+                                    error!(
+                                        ?block_root,
+                                        att_id,
+                                        "Unknown queued unaggregate for block root"
+                                    );
+                                }
+                            }
+                            QueuedAttestationId::Batched(att_id) => {
+                                if let Some((batch_attestation, delay_key)) =
+                                    self.queued_batch_attestations.remove(&att_id)
+                                {
+                                    // Remove the delay.
+                                    self.batched_attestation_queue.remove(&delay_key);
+
+                                    // Call the process_batch closure with the attestation as a batch
+                                    // since the block is now available
+                                    (batch_attestation.process_batch)(vec![
+                                        *batch_attestation.attestation
+                                    ]);
+                                    sent_count += 1;
+                                } else {
+                                    error!(
+                                        ?block_root,
+                                        att_id,
+                                        "Unknown queued batched attestation for block root"
+                                    );
+                                }
+                            }
                         }
                     }
 
@@ -779,6 +901,38 @@ impl<S: SlotClock> ReprocessQueue<S> {
                     }
                 }
             }
+            InboundEvent::Msg(BatchedAttestation(queued_batch_attestation)) => {
+                if self.batched_attestation_queue.len() >= MAXIMUM_QUEUED_ATTESTATIONS {
+                    if self.attestation_delay_debounce.elapsed() {
+                        error!(
+                            queue_size = MAXIMUM_QUEUED_ATTESTATIONS,
+                            msg = "system resources may be saturated",
+                            "Batched attestation delay queue is full"
+                        );
+                    }
+                    // Drop the attestation.
+                    return;
+                }
+
+                let att_id = QueuedAttestationId::Batched(self.next_attestation);
+
+                // Register the delay.
+                let delay_key = self
+                    .batched_attestation_queue
+                    .insert(att_id, QUEUED_ATTESTATION_DELAY);
+
+                // Register this attestation for the corresponding root.
+                self.awaiting_attestations_per_root
+                    .entry(queued_batch_attestation.beacon_block_root)
+                    .or_default()
+                    .push(att_id);
+
+                // Store the attestation and its info.
+                self.queued_batch_attestations
+                    .insert(self.next_attestation, (queued_batch_attestation, delay_key));
+
+                self.next_attestation += 1;
+            }
             // A block that was queued for later processing is now ready to be processed.
             InboundEvent::ReadyGossipBlock(ready_block) => {
                 let block_root = ready_block.beacon_block_root;
@@ -822,6 +976,10 @@ impl<S: SlotClock> ReprocessQueue<S> {
                                 ReadyWork::Unaggregate(unaggregate),
                             )
                         }),
+                    QueuedAttestationId::Batched(_) => {
+                        error!("Batched attestation ID reached ReadyAttestation handler");
+                        None
+                    }
                 } {
                     if self.ready_work_tx.try_send(work).is_err() {
                         error!(
@@ -833,6 +991,40 @@ impl<S: SlotClock> ReprocessQueue<S> {
 
                     if let Entry::Occupied(mut queued_atts) =
                         self.awaiting_attestations_per_root.entry(root)
+                        && let Some(index) =
+                            queued_atts.get().iter().position(|&id| id == queued_id)
+                    {
+                        let queued_atts_mut = queued_atts.get_mut();
+                        queued_atts_mut.swap_remove(index);
+
+                        // If the vec is empty after this attestation's removal, we need to delete
+                        // the entry to prevent bloating the hashmap indefinitely.
+                        if queued_atts_mut.is_empty() {
+                            queued_atts.remove_entry();
+                        }
+                    }
+                }
+            }
+            InboundEvent::ReadyBatchedAttestation(queued_id) => {
+                metrics::inc_counter(
+                    &metrics::BEACON_PROCESSOR_REPROCESSING_QUEUE_EXPIRED_ATTESTATIONS,
+                );
+
+                if let Some((batch_attestation, _delay_key)) =
+                    self.queued_batch_attestations.remove(&match queued_id {
+                        QueuedAttestationId::Batched(id) => id,
+                        _ => {
+                            error!("Invalid attestation ID for batched attestation");
+                            return;
+                        }
+                    }) {
+                    let beacon_block_root = batch_attestation.beacon_block_root;
+                    // Call the process_batch closure with the single attestation as a batch
+                    // since the block was never imported and we're expiring the attestation.
+                    (batch_attestation.process_batch)(vec![*batch_attestation.attestation]);
+
+                    if let Entry::Occupied(mut queued_atts) =
+                        self.awaiting_attestations_per_root.entry(beacon_block_root)
                         && let Some(index) =
                             queued_atts.get().iter().position(|&id| id == queued_id)
                     {
