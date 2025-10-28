@@ -39,8 +39,7 @@
 //! task.
 
 use crate::work_reprocessing_queue::{
-    QueuedBackfillBatch, QueuedBatchAttestation, QueuedColumnReconstruction, QueuedGossipBlock,
-    ReprocessQueueMessage,
+    QueuedBackfillBatch, QueuedColumnReconstruction, QueuedGossipBlock, ReprocessQueueMessage,
 };
 use futures::stream::{Stream, StreamExt};
 use futures::task::Poll;
@@ -1305,24 +1304,7 @@ impl<E: EthSpec> BeaconProcessor<E> {
                                 }
                             }
                             _ if can_spawn => self.spawn_worker(work, created_timestamp, idle_tx),
-                            Work::GossipAttestation { .. } => {
-                                // send the attestation process event to reprocessing queue
-                                // for delayed batching and processing
-                                if let Ok(queued_batch_attestation) =
-                                    QueuedBatchAttestation::try_from(work)
-                                {
-                                    if let Err(e) = reprocess_work_tx.try_send(
-                                        ReprocessQueueMessage::BatchedAttestation(
-                                            queued_batch_attestation,
-                                        ),
-                                    ) {
-                                        error!(
-                                            error = ?e,
-                                            "Failed to send batched attestation to reprocess queue"
-                                        )
-                                    }
-                                }
-                            }
+                            Work::GossipAttestation { .. } => attestation_queue.push(work),
                             // Attestation batches are formed internally within the
                             // `BeaconProcessor`, they are not sent from external services.
                             Work::GossipAttestationBatch { .. } => crit!(

@@ -7,6 +7,7 @@ use beacon_chain::fetch_blobs::{
     EngineGetBlobsOutput, FetchEngineBlobError, fetch_and_process_engine_blobs,
 };
 use beacon_chain::{AvailabilityProcessingStatus, BeaconChain, BeaconChainTypes, BlockError};
+use beacon_processor::work_reprocessing_queue::{QueuedBatchAttestation, ReprocessQueueMessage};
 use beacon_processor::{
     BeaconProcessorSend, DuplicateCache, GossipAggregatePackage, GossipAttestationPackage, Work,
     WorkEvent as BeaconWorkEvent,
@@ -101,19 +102,21 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
             move |attestations| processor.process_gossip_attestation_batch(attestations, true);
 
         self.try_send(BeaconWorkEvent {
-            drop_during_sync: true,
-            work: Work::GossipAttestation {
-                attestation: Box::new(GossipAttestationPackage {
-                    message_id,
-                    peer_id,
-                    attestation: Box::new(attestation),
-                    subnet_id,
-                    should_import,
-                    seen_timestamp,
-                }),
-                process_individual: Box::new(process_individual),
-                process_batch: Box::new(process_batch),
-            },
+            drop_during_sync: false,
+            work: Work::Reprocess(ReprocessQueueMessage::BatchedAttestation(
+                QueuedBatchAttestation {
+                    attestation: Box::new(GossipAttestationPackage {
+                        message_id,
+                        peer_id,
+                        attestation: Box::new(attestation),
+                        subnet_id,
+                        should_import,
+                        seen_timestamp,
+                    }),
+                    process_individual: Box::new(process_individual),
+                    process_batch: Box::new(process_batch),
+                },
+            )),
         })
     }
 
