@@ -48,7 +48,7 @@ impl<E: EthSpec> ProductionLeanClient<E> {
             loop {
                 if let Some(duration_to_next_slot) = slot_clock.duration_to_next_slot() {
                     sleep(duration_to_next_slot).await;
-                    info!("duties completed for slot {}", slot);
+                    info!(?slot, "duties completed");
                     slot += 1;
                 }
             }
