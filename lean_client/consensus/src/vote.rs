@@ -1,6 +1,6 @@
+use crate::Hash256;
 use crate::checkpoint::Checkpoint;
 use crate::slot::Slot;
-use crate::Hash256;
 use serde::{Deserialize, Serialize};
 use ssz::{Decode, DecodeError, Encode};
 use tree_hash::TreeHash;
@@ -41,19 +41,19 @@ impl Encode for Vote {
     }
 
     fn ssz_fixed_len() -> usize {
-        <Slot as Encode>::ssz_fixed_len() +
-        <Checkpoint as Encode>::ssz_fixed_len() * 3 +
-        <u64 as Encode>::ssz_fixed_len() +
-        <Hash256 as Encode>::ssz_fixed_len()
+        <Slot as Encode>::ssz_fixed_len()
+            + <Checkpoint as Encode>::ssz_fixed_len() * 3
+            + <u64 as Encode>::ssz_fixed_len()
+            + <Hash256 as Encode>::ssz_fixed_len()
     }
 
     fn ssz_bytes_len(&self) -> usize {
-        self.slot.ssz_bytes_len() +
-        self.head.ssz_bytes_len() +
-        self.target.ssz_bytes_len() +
-        self.source.ssz_bytes_len() +
-        self.validator_index.ssz_bytes_len() +
-        self.block_root.ssz_bytes_len()
+        self.slot.ssz_bytes_len()
+            + self.head.ssz_bytes_len()
+            + self.target.ssz_bytes_len()
+            + self.source.ssz_bytes_len()
+            + self.validator_index.ssz_bytes_len()
+            + self.block_root.ssz_bytes_len()
     }
 
     fn ssz_append(&self, buf: &mut Vec<u8>) {
@@ -72,32 +72,32 @@ impl Decode for Vote {
     }
 
     fn ssz_fixed_len() -> usize {
-        <Slot as Decode>::ssz_fixed_len() +
-        <Checkpoint as Decode>::ssz_fixed_len() * 3 +
-        <u64 as Decode>::ssz_fixed_len() +
-        <Hash256 as Decode>::ssz_fixed_len()
+        <Slot as Decode>::ssz_fixed_len()
+            + <Checkpoint as Decode>::ssz_fixed_len() * 3
+            + <u64 as Decode>::ssz_fixed_len()
+            + <Hash256 as Decode>::ssz_fixed_len()
     }
 
     fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
         let mut offset = 0;
-        
+
         let slot = Slot::from_ssz_bytes(&bytes[offset..])?;
         offset += <Slot as Decode>::ssz_fixed_len();
-        
+
         let head = Checkpoint::from_ssz_bytes(&bytes[offset..])?;
         offset += <Checkpoint as Decode>::ssz_fixed_len();
-        
+
         let target = Checkpoint::from_ssz_bytes(&bytes[offset..])?;
         offset += <Checkpoint as Decode>::ssz_fixed_len();
-        
+
         let source = Checkpoint::from_ssz_bytes(&bytes[offset..])?;
         offset += <Checkpoint as Decode>::ssz_fixed_len();
-        
+
         let validator_index = u64::from_ssz_bytes(&bytes[offset..])?;
         offset += <u64 as Decode>::ssz_fixed_len();
-        
+
         let block_root = Hash256::from_ssz_bytes(&bytes[offset..])?;
-        
+
         Ok(Vote {
             slot,
             head,
@@ -177,17 +177,17 @@ impl Decode for SignedVote {
     fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
         let vote = Vote::from_ssz_bytes(bytes)?;
         let vote_len = vote.ssz_bytes_len();
-        
+
         if bytes.len() < vote_len + 32 {
             return Err(DecodeError::InvalidByteLength {
                 len: bytes.len(),
                 expected: vote_len + 32,
             });
         }
-        
+
         let mut signature = [0u8; 32];
         signature.copy_from_slice(&bytes[vote_len..vote_len + 32]);
-        
+
         Ok(SignedVote { vote, signature })
     }
 }
