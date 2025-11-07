@@ -5098,6 +5098,7 @@ dependencies = [
  "ethereum_ssz_derive",
  "fixed_bytes",
  "int_to_bytes",
+ "milhouse",
  "serde",
  "tree_hash",
  "tree_hash_derive",
@@ -5110,7 +5111,6 @@ version = "0.1.0"
 dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
- "hashbrown 0.14.5",
  "safe_arith",
  "serde",
  "types",

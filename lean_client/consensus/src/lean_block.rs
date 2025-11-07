@@ -1,30 +1,33 @@
-use crate::slot::Slot;
+use crate::attestation::{Attestation, Slot};
+use types::EthSpec;
 
-//TODO: SignedVote
-#[derive(Clone, Debug)]
-pub struct BlockBody {}
+use types::Hash256;
+pub struct LeanBlock<E: EthSpec> {
+    slot: Slot,
+    proposer_index: u64,
+    parent_root: Hash256,
+    state_root: Hash256,
+    body: LeanBlockBody<E>,
+}
 
-#[derive(Clone, Debug, Hash)]
+pub struct LeanBlockBody<E: EthSpec> {
+    attestations: Attestations<E>,
+}
+
 pub struct LeanBlockHeader {
-    pub slot: Slot,
-    pub proposer_index: u64,
-    pub parent_root: [u8; 32],
-    pub state_root: [u8; 32],
-    pub body_root: [u8; 32],
+    slot: Slot,
+    proposer_index: u64,
+    parent_root: Hash256,
+    state_root: Hash256,
+    body_root: Hash256,
 }
-
-#[derive(Clone, Debug)]
-pub struct LeanBlock {
-    pub slot: Slot,
-    pub proposer_index: u64,
-    pub parent_root: [u8; 32],
-    pub state_root: [u8; 32],
-    pub body_root: [u8; 32],
-    pub block_body: BlockBody,
+pub struct LeanBlockWithAttestation<E: EthSpec> {
+    block: Box<LeanBlock<E>>,
+    proposer_attestation: Attestation<E>,
 }
-
-#[derive(Clone, Debug)]
-pub struct SignedBlock {
-    pub message: LeanBlock,
-    pub signature: [u8; 32],
+pub struct SignedLeanBlockWithAttestation<E: EthSpec> {
+    message: LeanBlockWithAttestation<E>,
+    signature: BlockSignature,
 }
+pub struct Attestations<E: EthSpec>([Attestation<E>]);
+pub struct BlockSignature([u64]);
