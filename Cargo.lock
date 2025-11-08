@@ -5083,10 +5083,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lean-chain"
-version = "0.1.0"
-
-[[package]]
 name = "lean-consensus"
 version = "0.1.0"
 dependencies = [
@@ -5094,6 +5090,7 @@ dependencies = [
  "ethereum_ssz_derive",
  "fixed_bytes",
  "int_to_bytes",
+ "lean-crypto",
  "milhouse",
  "serde",
  "tree_hash",
@@ -5102,15 +5099,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "lean-forkchoice"
+name = "lean-crypto"
 version = "0.1.0"
 dependencies = [
+ "alloy-primitives",
  "ethereum_ssz",
  "ethereum_ssz_derive",
- "safe_arith",
- "serde",
- "types",
+ "tree_hash",
 ]
+
+[[package]]
+name = "lean-forkchoice"
+version = "0.1.0"
 
 [[package]]
 name = "lean-network"

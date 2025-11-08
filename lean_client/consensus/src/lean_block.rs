@@ -1,5 +1,9 @@
 use crate::attestation::{Attestation, Slot};
-use types::EthSpec;
+use lean_crypto::Signature;
+
+use crate::lean_state::LeanState;
+use milhouse::List;
+use types::{EthSpec, VariableList};
 
 use types::Hash256;
 pub struct LeanBlock<E: EthSpec> {
@@ -11,7 +15,7 @@ pub struct LeanBlock<E: EthSpec> {
 }
 
 pub struct LeanBlockBody<E: EthSpec> {
-    attestations: Attestations<E>,
+    attestations: VariableList<Attestation, E::MaxAttestations>,
 }
 
 pub struct LeanBlockHeader {
@@ -23,11 +27,15 @@ pub struct LeanBlockHeader {
 }
 pub struct LeanBlockWithAttestation<E: EthSpec> {
     block: Box<LeanBlock<E>>,
-    proposer_attestation: Attestation<E>,
+    proposer_attestation: Attestation,
 }
 pub struct SignedLeanBlockWithAttestation<E: EthSpec> {
     message: LeanBlockWithAttestation<E>,
-    signature: BlockSignature,
+    signature: List<Signature, E::ValidatorRegistryLimit>,
 }
-pub struct Attestations<E: EthSpec>([Attestation<E>]);
-pub struct BlockSignature([u64]);
+
+impl<E: EthSpec> SignedLeanBlockWithAttestation<E> {
+    pub fn verify_signatures(self, parent_state: LeanState<E>) -> Result<(), String> {
+        Ok(())
+    }
+}

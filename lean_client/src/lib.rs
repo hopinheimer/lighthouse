@@ -11,7 +11,6 @@ pub struct ProductionLeanClient<E: EthSpec> {
     context: RuntimeContext<E>,
     slot_clock: SystemTimeSlotClock,
     config: LeanConfig,
-    //TODO: temporary need to be moved into services
     executor: TaskExecutor,
 }
 

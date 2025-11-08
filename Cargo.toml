@@ -68,8 +68,8 @@ members = [
     "lean_client",
     "lean_client/consensus",
     "lean_client/lean_network",
-    "lean_client/lean_chain",
     "lean_client/forkchoice",
+    "lean_client/crypto",
     "lighthouse",
     "lighthouse/environment",
     "slasher",
@@ -177,11 +177,6 @@ initialized_validators = { path = "validator_client/initialized_validators" }
 int_to_bytes = { path = "consensus/int_to_bytes" }
 itertools = "0.10"
 kzg = { path = "crypto/kzg" }
-lean_client = { path = "lean_client" }
-lean-consensus = { path = "lean_client/consensus" }
-lean-network = { path = "lean_client/lean_network" }
-lean-chain = { path = "lean_client/lean_chain" }
-lean-forkchoice = { path = "lean_client/forkchoice" }
 libsecp256k1 = "0.7"
 lighthouse_network = { path = "beacon_node/lighthouse_network" }
 lighthouse_tracing = { path = "beacon_node/lighthouse_tracing" }
@@ -292,6 +287,14 @@ xdelta3 = { git = "https://github.com/sigp/xdelta3-rs", rev = "4db64086bb02e9feb
 zeroize = { version = "1", features = ["zeroize_derive", "serde"] }
 zip = "0.6"
 zstd = "0.13"
+
+# lean chain crates
+lean_client = { path = "lean_client" }
+lean-consensus = { path = "lean_client/consensus" }
+lean-network = { path = "lean_client/lean_network" }
+lean-forkchoice = { path = "lean_client/forkchoice" }
+lean-crypto = { path = "lean_client/crypto"}
+
 
 [profile.maxperf]
 inherits = "release"
