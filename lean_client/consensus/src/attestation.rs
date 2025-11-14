@@ -6,11 +6,17 @@ use types::Hash256;
 use types::VariableList;
 use types::typenum::U4096;
 
+use tree_hash::TreeHash;
+use tree_hash_derive::TreeHash;
+
+
+#[derive(Clone, TreeHash)]
 pub struct Attestation {
     pub validator_id: u64,
     pub attestation_data: AttestationData,
 }
 
+#[derive(Clone, TreeHash)]
 pub struct AttestationData {
     pub slot: Slot,
     pub head: Checkpoint,
@@ -48,7 +54,25 @@ impl Slot {
     }
 }
 
-#[derive(Default)]
+impl TreeHash for Slot {
+    fn tree_hash_type() -> tree_hash::TreeHashType {
+        tree_hash::TreeHashType::Basic
+    }
+
+    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
+        self.0.tree_hash_packed_encoding()
+    }
+
+    fn tree_hash_packing_factor() -> usize {
+        u64::tree_hash_packing_factor()
+    }
+
+    fn tree_hash_root(&self) -> Hash256 {
+        self.0.tree_hash_root()
+    }
+}
+
+#[derive(Clone, Default, TreeHash)]
 pub struct Checkpoint {
     pub slot: Slot,
     pub root: Hash256,
