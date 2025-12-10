@@ -1,63 +1,90 @@
 pub mod cli;
+pub mod config;
+
+pub use config::Config;
+
+use std::sync::Arc;
+
+use crate::config::Config as LeanClientConfig;
 use environment::RuntimeContext;
+use lean_config::{LeanClientPaths, initialize as load_runtime};
+use lean_keystore::{KeyStore, ValidatorKeyPair};
 use lean_network::{NetworkConfig, NetworkService};
-use slot_clock::{SlotClock, SystemTimeSlotClock};
-use task_executor::TaskExecutor;
-use tokio::time::{Duration, sleep};
+use lean_validator_service::ValidatorService;
+use slot_clock::SystemTimeSlotClock;
+use store::database::interface::BeaconNodeBackend as LeanBackend;
+use tokio::sync::mpsc;
 use tracing::info;
 use types::EthSpec;
 
 pub struct ProductionLeanClient<E: EthSpec> {
     context: RuntimeContext<E>,
     slot_clock: SystemTimeSlotClock,
-    executor: TaskExecutor,
+    db: Arc<LeanBackend<E>>,
+    validator_key_pair: Option<ValidatorKeyPair>,
+    validator_index: u64,
+    keystore: Option<KeyStore>,
+    network_config: NetworkConfig,
 }
 
 impl<E: EthSpec> ProductionLeanClient<E> {
-    pub async fn new(context: RuntimeContext<E>, executor: TaskExecutor) -> Result<Self, String> {
-        let slot_clock = SystemTimeSlotClock::new(
-            context.eth2_config.spec.genesis_slot,
-            Duration::from_secs(0),
-            Duration::from_secs(context.eth2_config.spec.seconds_per_slot),
-        );
+    pub async fn new(context: RuntimeContext<E>, config: LeanClientConfig) -> Result<Self, String> {
+        let resources = load_runtime::<E>(LeanClientPaths::from(config))?;
+
+        info!("Lean client runtime resources prepared");
 
         Ok(Self {
             context,
-            slot_clock,
-            executor,
+            slot_clock: resources.slot_clock,
+            db: resources.db,
+            validator_key_pair: Some(resources.validator_key_pair),
+            validator_index: resources.validator_index,
+            keystore: Some(resources.keystore),
+            network_config: resources.network_config,
         })
     }
 
     pub async fn start_service(&mut self) -> Result<(), String> {
-        let _slot_duration = Duration::from_secs(self.context.eth2_config.spec.seconds_per_slot);
-        let _duration_to_next_slot = self
-            .slot_clock
-            .duration_to_next_slot()
-            .ok_or("Unable to determine duration to next slot");
+        let (network_recv_tx, network_recv_rx) = mpsc::unbounded_channel();
+        let (network_send_tx, network_send_rx) = mpsc::unbounded_channel();
 
         info!("Starting network service");
-        let network_config = NetworkConfig::default();
-        let network_service = NetworkService::new(network_config)
-            .map_err(|e| format!("Failed to create network service: {}", e))?;
-        network_service.start(self.executor.clone());
+        let network_service = NetworkService::<E>::new(
+            self.network_config.clone(),
+            network_recv_tx,
+            network_send_rx,
+        )
+        .map_err(|e| format!("Failed to create network service: {}", e))?;
+        self.context
+            .executor
+            .clone_with_name("lean_network_service".into())
+            .spawn(network_service.start(), "network_service");
 
-        let executor = self.executor.clone();
-        let slot_clock = self.slot_clock.clone();
+        info!("Starting validator service");
+        let validator_key_pair = self
+            .validator_key_pair
+            .take()
+            .ok_or_else(|| "Validator key pair not loaded".to_string())?;
+        let keystore = self
+            .keystore
+            .take()
+            .ok_or_else(|| "Keystore not initialized".to_string())?;
 
-        info!("Starting lean node duties");
-        let mut slot = 0;
+        let validator_service = ValidatorService::new(
+            self.slot_clock.clone(),
+            network_recv_rx,
+            network_send_tx,
+            self.db.clone(),
+            self.validator_index,
+            validator_key_pair,
+            keystore,
+        )?;
 
-        let interval_fut = async move {
-            loop {
-                if let Some(duration_to_next_slot) = slot_clock.duration_to_next_slot() {
-                    sleep(duration_to_next_slot).await;
-                    info!(?slot, "duties completed");
-                    slot += 1;
-                }
-            }
-        };
+        self.context
+            .executor
+            .clone_with_name("lean_validator_service".into())
+            .spawn(validator_service.run(), "validator_service");
 
-        executor.spawn(interval_fut, "lean_node_service");
         Ok(())
     }
 }

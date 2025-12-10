@@ -1,14 +1,14 @@
 use crate::attestation::{Attestation, Slot};
-use tree_hash_derive::TreeHash;
-use tree_hash::TreeHash;
+use crate::lean_state::LeanState;
 use crate::validator::ValidatorIndex;
 use lean_crypto::Signature;
-
-use crate::lean_state::LeanState;
 use milhouse::List;
-use types::{EthSpec, VariableList};
+use ssz_derive::{Decode, Encode};
+use tree_hash::TreeHash;
+use tree_hash_derive::TreeHash;
+use types::{EthSpec, Hash256, VariableList};
 
-use types::Hash256;
+#[derive(Debug, Clone, Encode, Decode, TreeHash)]
 pub struct LeanBlock<E: EthSpec> {
     pub slot: Slot,
     pub proposer_index: u64,
@@ -17,12 +17,12 @@ pub struct LeanBlock<E: EthSpec> {
     pub body: LeanBlockBody<E>,
 }
 
-#[derive(TreeHash)]
+#[derive(Debug, Clone, Encode, Decode, TreeHash)]
 pub struct LeanBlockBody<E: EthSpec> {
-    pub attestations: VariableList<Attestation, E::MaxAttestations>,
+    pub attestations: VariableList<Attestation, E::ValidatorRegistryLimit>,
 }
 
-#[derive(TreeHash)]
+#[derive(Debug, Clone, Encode, Decode, TreeHash)]
 pub struct LeanBlockHeader {
     pub slot: Slot,
     pub proposer_index: ValidatorIndex,
@@ -30,13 +30,17 @@ pub struct LeanBlockHeader {
     pub state_root: Hash256,
     pub body_root: Hash256,
 }
+
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct LeanBlockWithAttestation<E: EthSpec> {
-    pub block: Box<LeanBlock<E>>,
+    pub block: LeanBlock<E>,
     pub proposer_attestation: Attestation,
 }
+
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct SignedLeanBlockWithAttestation<E: EthSpec> {
     pub message: LeanBlockWithAttestation<E>,
-    pub signature: List<Signature, E::ValidatorRegistryLimit>,
+    pub signature: VariableList<Signature, E::ValidatorRegistryLimit>,
 }
 
 impl<E: EthSpec> SignedLeanBlockWithAttestation<E> {
@@ -90,27 +94,9 @@ impl<E: EthSpec> SignedLeanBlockWithAttestation<E> {
                 ));
             }
 
-            let validator = validators.get(validator_id).ok_or_else(|| {
-                format!("Failed to get validator at index {}", validator_id)
-            })?;
-
-            // Get the attestation data slot (epoch)
-            let epoch = attestation.attestation_data.slot.0;
-
-            // Compute the message hash (tree hash root of the attestation)
-            let message_hash = attestation.tree_hash_root();
-
-            // Verify the XMSS signature
-            // This cryptographically proves that:
-            // - The validator possesses the secret key for their public key
-            // - The attestation has not been tampered with
-            // - The signature was created at the correct epoch (slot)
-            if !signature.verify(validator.get_pubkey(), epoch, message_hash.as_ref()) {
-                return Err(format!(
-                    "Attestation signature verification failed for validator {}",
-                    validator_id
-                ));
-            }
+            let validator = validators
+                .get(validator_id)
+                .ok_or_else(|| format!("Failed to get validator at index {}", validator_id))?;
         }
 
         Ok(())

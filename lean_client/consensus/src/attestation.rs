@@ -1,22 +1,18 @@
 use lean_crypto::Signature;
-
-use types::BitList;
-use types::EthSpec;
+use ssz::{Decode, Encode};
+use ssz_derive::{Decode, Encode};
 use types::Hash256;
-use types::VariableList;
-use types::typenum::U4096;
 
 use tree_hash::TreeHash;
 use tree_hash_derive::TreeHash;
 
-
-#[derive(Clone, TreeHash)]
+#[derive(Debug, Clone, Encode, Decode, TreeHash)]
 pub struct Attestation {
     pub validator_id: u64,
     pub attestation_data: AttestationData,
 }
 
-#[derive(Clone, TreeHash)]
+#[derive(Debug, Clone, Encode, Decode, TreeHash)]
 pub struct AttestationData {
     pub slot: Slot,
     pub head: Checkpoint,
@@ -24,14 +20,14 @@ pub struct AttestationData {
     pub source: Checkpoint,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Slot(pub u64);
 
 impl Slot {
     pub fn is_justifiable_after(self, finalized_slot: Slot) -> Result<(), String> {
-        if self >= finalized_slot {
+        if self <= finalized_slot {
             return Err(format!(
-                "candidate slot is must not be before finalized slot candidate={} finalized={}",
+                "candidate slot must not be equal to or before finalized slot candidate={} finalized={}",
                 self.0, finalized_slot.0
             ));
         }
@@ -72,22 +68,46 @@ impl TreeHash for Slot {
     }
 }
 
-#[derive(Clone, Default, TreeHash)]
-pub struct Checkpoint {
-    pub slot: Slot,
-    pub root: Hash256,
+impl Encode for Slot {
+    fn is_ssz_fixed_len() -> bool {
+        <u64 as Encode>::is_ssz_fixed_len()
+    }
+
+    fn ssz_fixed_len() -> usize {
+        <u64 as Encode>::ssz_fixed_len()
+    }
+
+    fn ssz_bytes_len(&self) -> usize {
+        self.0.ssz_bytes_len()
+    }
+
+    fn ssz_append(&self, buf: &mut Vec<u8>) {
+        self.0.ssz_append(buf)
+    }
 }
 
+impl Decode for Slot {
+    fn is_ssz_fixed_len() -> bool {
+        <u64 as Decode>::is_ssz_fixed_len()
+    }
 
+    fn ssz_fixed_len() -> usize {
+        <u64 as Decode>::ssz_fixed_len()
+    }
+
+    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, ssz::DecodeError> {
+        u64::from_ssz_bytes(bytes).map(Slot)
+    }
+}
+
+#[derive(Debug, Clone, Default, Encode, Decode, TreeHash)]
+pub struct Checkpoint {
+    pub root: Hash256,  // FIELD 0 - MUST MATCH SPEC ORDER
+    pub slot: Slot,     // FIELD 1 - MUST MATCH SPEC ORDER
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct SignedAttestation {
     pub message: Attestation,
     pub signature: Signature,
-}
-pub struct AggregatedAttestations<E: EthSpec> {
-    pub aggregation_bits: BitList<E::MaxValidatorsPerCommittee>,
-    pub data: AttestationData,
-}
-pub struct SignedAggregatedAttestations<E: EthSpec> {
-    pub aggregate_attestation: AggregatedAttestations<E>,
-    pub signature: VariableList<Signature, U4096>,
 }

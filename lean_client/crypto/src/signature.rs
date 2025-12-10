@@ -1,73 +1,61 @@
-use ssz::{Decode, DecodeError, Encode};
-use tree_hash::TreeHash;
+use ssz_derive::{Decode, Encode};
+use tree_hash_derive::TreeHash;
+use types::FixedVector;
+use types::typenum::*;
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+/// XMSS signature size in bytes (3112 bytes)
+pub const SIGNATURE_SIZE: usize = 3112;
+
+/// Type alias for U3112 = U2048 + U1024 + U40
+type U3112 = Sum<Sum<U2048, U1024>, U40>;
+
+/// XMSS signature represented as fixed-size vector (3112 bytes)
+#[derive(Clone, PartialEq, Eq, Debug, Encode, Decode, TreeHash)]
 pub struct Signature {
-    bytes: Vec<u8>,
+    bytes: FixedVector<u8, U3112>,
 }
 
 impl Signature {
-    /// Create a new signature from a byte vector.
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self { bytes }
+    /// Create a new signature from a 3112-byte array
+    pub fn from_bytes(bytes: [u8; SIGNATURE_SIZE]) -> Self {
+        Self {
+            bytes: FixedVector::new(bytes.to_vec())
+                .expect("Fixed vector creation should not fail for correct size"),
+        }
     }
 
-    /// Create an empty signature (zero-length).
-    pub fn empty() -> Self {
-        Self { bytes: Vec::new() }
+    /// Create a signature from a byte slice (must be exactly SIGNATURE_SIZE bytes)
+    pub fn try_from_slice(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() != SIGNATURE_SIZE {
+            return Err(format!(
+                "Invalid signature length: expected {}, got {}",
+                SIGNATURE_SIZE,
+                bytes.len()
+            ));
+        }
+        let vec = bytes.to_vec();
+        let fixed =
+            FixedVector::new(vec).map_err(|e| format!("Failed to create fixed vector: {:?}", e))?;
+        Ok(Self { bytes: fixed })
     }
 
-    /// Returns true if this signature is empty (has no bytes).
-    pub fn is_empty(&self) -> bool {
-        self.bytes.is_empty()
+    /// Get the signature as a slice
+    pub fn as_slice(&self) -> &[u8] {
+        self.bytes.as_ref()
     }
 
-    /// Get a reference to the signature bytes.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    /// Convert the signature to a byte vector.
-    pub fn into_bytes(self) -> Vec<u8> {
-        self.bytes
-    }
-
-    /// Get the length of the signature in bytes.
-    pub fn len(&self) -> usize {
-        self.bytes.len()
-    }
-
-    /// Verify the signature using Generalized XMSS verification.
-    ///
-    /// # Parameters
-    /// - `public_key`: The public key bytes (52 bytes for XMSS)
-    /// - `epoch`: The epoch/slot number
-    /// - `message`: The message bytes to verify
-    ///
-    /// # Returns
-    /// `true` if the signature is valid, `false` otherwise
-    ///
-    /// # TODO
-    /// Implement XMSS signature verification using the hashsig crate.
-    /// This requires:
-    /// 1. Configuring the GeneralizedXMSSSignatureScheme with the correct parameters
-    ///    matching the Python spec (TEST_CONFIG or PROD_CONFIG)
-    /// 2. Setting up the Poseidon2 tweakable hash function
-    /// 3. Configuring the incomparable encoding with LOG_LIFETIME = 24
-    /// 4. Deserializing the public key and signature from bytes
-    /// 5. Calling the verify function with the correct parameters
-    ///
-    /// Reference: /Users/manasnagaraj/projects/oss/sigmaprime/leanSpec/src/lean_spec/subspecs/xmss/interface.py
-    pub fn verify(&self, _public_key: &[u8], _epoch: u64, _message: &[u8]) -> bool {
-        // For now, return false to maintain security
-        // Signature verification should be explicitly enabled once properly implemented
-        false
+    /// Create a zero-filled signature
+    pub fn zero() -> Self {
+        Self {
+            bytes: FixedVector::new(vec![0u8; SIGNATURE_SIZE])
+                .expect("Fixed vector creation should not fail for correct size"),
+        }
     }
 }
 
 impl Default for Signature {
     fn default() -> Self {
-        Self::empty()
+        Self::zero()
     }
 }
 
@@ -77,9 +65,7 @@ impl core::fmt::Display for Signature {
         for byte in self.bytes.iter().take(6) {
             write!(f, "{:02x}", byte)?;
         }
-        if self.bytes.len() > 6 {
-            write!(f, "...({} bytes)", self.bytes.len())?;
-        }
+        write!(f, "...({} bytes)", SIGNATURE_SIZE)?;
         Ok(())
     }
 }
@@ -90,15 +76,9 @@ impl core::hash::Hash for Signature {
     }
 }
 
-impl From<Vec<u8>> for Signature {
-    fn from(bytes: Vec<u8>) -> Self {
+impl From<[u8; SIGNATURE_SIZE]> for Signature {
+    fn from(bytes: [u8; SIGNATURE_SIZE]) -> Self {
         Self::from_bytes(bytes)
-    }
-}
-
-impl From<Signature> for Vec<u8> {
-    fn from(sig: Signature) -> Self {
-        sig.into_bytes()
     }
 }
 
@@ -108,48 +88,5 @@ impl AsRef<[u8]> for Signature {
     }
 }
 
-// SSZ Encoding/Decoding implementation for variable-length signatures
-impl Encode for Signature {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn ssz_append(&self, buf: &mut Vec<u8>) {
-        buf.extend_from_slice(&self.bytes);
-    }
-
-    fn ssz_bytes_len(&self) -> usize {
-        self.bytes.len()
-    }
-}
-
-impl Decode for Signature {
-    fn is_ssz_fixed_len() -> bool {
-        false
-    }
-
-    fn from_ssz_bytes(bytes: &[u8]) -> Result<Self, DecodeError> {
-        Ok(Self {
-            bytes: bytes.to_vec(),
-        })
-    }
-}
-
-// TreeHash implementation for variable-length signatures
-impl TreeHash for Signature {
-    fn tree_hash_type() -> tree_hash::TreeHashType {
-        tree_hash::TreeHashType::Vector
-    }
-
-    fn tree_hash_packed_encoding(&self) -> tree_hash::PackedEncoding {
-        unreachable!("Vector should never be packed")
-    }
-
-    fn tree_hash_packing_factor() -> usize {
-        unreachable!("Vector should never be packed")
-    }
-
-    fn tree_hash_root(&self) -> tree_hash::Hash256 {
-        tree_hash::merkle_root(&self.bytes, 0)
-    }
-}
+// SSZ Encoding/Decoding is derived from FixedVector implementation
+// TreeHash is also derived from FixedVector implementation

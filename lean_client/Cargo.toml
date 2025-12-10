@@ -7,32 +7,23 @@ edition.workspace = true
 [dependencies]
 clap = { workspace = true }
 clap_utils = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
-gossipsub = { workspace = true }
-futures = { workspace = true }
-lean-network = { workspace = true }
-lean-consensus = { workspace = true }
-task_executor = { workspace = true }
-async-channel = { workspace = true }
+environment = { workspace = true }
+ethereum_ssz = { workspace = true }
+lean_consensus = { workspace = true }
+lean_genesis = { workspace = true }
+lean_keystore = { path = "keystore" }
+lean_network = { workspace = true }
+lean_network_config = { workspace = true }
+lean_store = { path = "store" }
+lean_validator_service = { workspace = true }
+lean_config = { workspace = true }
 serde = { workspace = true }
 slot_clock = { workspace = true }
-environment = { workspace = true }
+store = { workspace = true, features = ["redb"] }
+task_executor = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
 types = { workspace = true }
 
-[dependencies.libp2p]
-version = "0.56"
-default-features = false
-features = [
-    "identify",
-    "yamux",
-    "noise",
-    "tcp",
-    "tokio",
-    "secp256k1",
-    "macros",
-    "ecdsa",
-    "quic",
-    "mdns"
-]
-
+[dev-dependencies]
+tempfile = { workspace = true }
