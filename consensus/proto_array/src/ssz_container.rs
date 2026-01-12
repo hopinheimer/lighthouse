@@ -1,7 +1,7 @@
 use crate::proto_array::ProposerBoost;
 use crate::{
     Error, JustifiedBalances,
-    proto_array::{ProtoArray, ProtoNodeV17},
+    proto_array::{ProtoArray, ProtoNode, ProtoNodeV17},
     proto_array_fork_choice::{ElasticList, ProtoArrayForkChoice, VoteTracker},
 };
 use ssz::{Encode, four_byte_option_impl};
@@ -43,12 +43,41 @@ impl SszContainer {
     ) -> Self {
         let proto_array = &from.proto_array;
 
+        // Convert ProtoNode enum to ProtoNodeV17 for SSZ serialization.
+        // V18 nodes are converted to V17 format for backward compatibility.
+        let nodes: Vec<ProtoNodeV17> = proto_array
+            .nodes
+            .iter()
+            .map(|node| match node {
+                ProtoNode::V17(v17) => v17.clone(),
+                ProtoNode::V18(v18) => ProtoNodeV17 {
+                    slot: v18.slot,
+                    state_root: v18.state_root,
+                    target_root: v18.target_root,
+                    current_epoch_shuffling_id: v18.current_epoch_shuffling_id.clone(),
+                    next_epoch_shuffling_id: v18.next_epoch_shuffling_id.clone(),
+                    root: v18.root,
+                    parent: v18.parent,
+                    justified_checkpoint: v18.justified_checkpoint,
+                    finalized_checkpoint: v18.finalized_checkpoint,
+                    weight: v18.weight,
+                    best_child: v18.best_child,
+                    best_descendant: v18.best_descendant,
+                    // V18 uses PayloadStatus instead of ExecutionStatus.
+                    // For serialization, use Irrelevant as a placeholder.
+                    execution_status: crate::ExecutionStatus::Irrelevant(false),
+                    unrealized_justified_checkpoint: v18.unrealized_justified_checkpoint,
+                    unrealized_finalized_checkpoint: v18.unrealized_finalized_checkpoint,
+                },
+            })
+            .collect();
+
         Self {
             votes: from.votes.0.clone(),
             prune_threshold: proto_array.prune_threshold,
             justified_checkpoint,
             finalized_checkpoint,
-            nodes: proto_array.nodes.clone(),
+            nodes,
             indices: proto_array.indices.iter().map(|(k, v)| (*k, *v)).collect(),
             previous_proposer_boost: proto_array.previous_proposer_boost,
         }
@@ -59,9 +88,16 @@ impl TryFrom<(SszContainer, JustifiedBalances)> for ProtoArrayForkChoice {
     type Error = Error;
 
     fn try_from((from, balances): (SszContainer, JustifiedBalances)) -> Result<Self, Error> {
+        // Convert ProtoNodeV17 back to ProtoNode enum (as V17 variant).
+        let nodes: Vec<ProtoNode> = from
+            .nodes
+            .into_iter()
+            .map(ProtoNode::V17)
+            .collect();
+
         let proto_array = ProtoArray {
             prune_threshold: from.prune_threshold,
-            nodes: from.nodes,
+            nodes,
             indices: from.indices.into_iter().collect::<HashMap<_, _>>(),
             previous_proposer_boost: from.previous_proposer_boost,
         };
