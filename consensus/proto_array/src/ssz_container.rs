@@ -1,7 +1,7 @@
 use crate::proto_array::ProposerBoost;
 use crate::{
     Error, JustifiedBalances,
-    proto_array::{ProtoArray, ProtoNodeV17},
+    proto_array::{ProtoArray, ProtoNode},
     proto_array_fork_choice::{ElasticList, ProtoArrayForkChoice, VoteTracker},
 };
 use ssz::{Encode, four_byte_option_impl};
@@ -30,9 +30,10 @@ pub struct SszContainer {
     justified_checkpoint: Checkpoint,
     // Deprecated, remove in a future schema migration
     finalized_checkpoint: Checkpoint,
-    pub nodes: Vec<ProtoNodeV17>,
+    pub nodes: Vec<ProtoNode>,
     pub indices: Vec<(Hash256, usize)>,
     pub previous_proposer_boost: ProposerBoost,
+    pub envelope_indices: Vec<((Hash256, bool), usize)>
 }
 
 impl SszContainer {
@@ -51,6 +52,7 @@ impl SszContainer {
             nodes: proto_array.nodes.clone(),
             indices: proto_array.indices.iter().map(|(k, v)| (*k, *v)).collect(),
             previous_proposer_boost: proto_array.previous_proposer_boost,
+            envelope_indices: proto_array.envelope_indices.iter().map(|(k, v)| (*k, *v)).collect(),
         }
     }
 }
@@ -64,6 +66,7 @@ impl TryFrom<(SszContainer, JustifiedBalances)> for ProtoArrayForkChoice {
             nodes: from.nodes,
             indices: from.indices.into_iter().collect::<HashMap<_, _>>(),
             previous_proposer_boost: from.previous_proposer_boost,
+            envelope_indices: from.envelope_indices.into_iter().collect::<HashMap<_,_>>(),
         };
 
         Ok(Self {
@@ -85,6 +88,7 @@ impl From<SszContainerV17> for SszContainerV28 {
             nodes: v17.nodes,
             indices: v17.indices,
             previous_proposer_boost: v17.previous_proposer_boost,
+            envelope_indices: v17.envelope_indices,
         }
     }
 }
@@ -101,6 +105,7 @@ impl From<(SszContainerV28, JustifiedBalances)> for SszContainerV17 {
             nodes: v28.nodes,
             indices: v28.indices,
             previous_proposer_boost: v28.previous_proposer_boost,
+            envelope_indices: v28.envelope_indices,
         }
     }
 }

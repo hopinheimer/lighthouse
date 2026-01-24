@@ -26,6 +26,7 @@ pub const DEFAULT_PRUNE_THRESHOLD: usize = 256;
 // FIXME(sproul): version this type?
 pub struct VoteTracker {
     current_root: Hash256,
+    current_payload_present: bool,
     next_root: Hash256,
     next_slot: Slot,
     next_payload_present: bool,
@@ -162,6 +163,8 @@ impl fmt::Display for ExecutionStatus {
 /// A block that is to be applied to the fork choice.
 ///
 /// A simplified version of `types::BeaconBlock`.
+///
+/// FIXME(gloas): version this as well?
 #[derive(Clone, Debug, PartialEq)]
 pub struct Block {
     pub slot: Slot,
@@ -178,6 +181,13 @@ pub struct Block {
     pub execution_status: ExecutionStatus,
     pub unrealized_justified_checkpoint: Option<Checkpoint>,
     pub unrealized_finalized_checkpoint: Option<Checkpoint>,
+    pub payload_invalid: bool,
+}
+
+/// A payload that is to be applied to the fork choice
+///
+/// A simplified version of `types::Payload`
+pub struct Payload{
 }
 
 impl Block {
@@ -441,12 +451,14 @@ impl ProtoArrayForkChoice {
         current_epoch_shuffling_id: AttestationShufflingId,
         next_epoch_shuffling_id: AttestationShufflingId,
         execution_status: ExecutionStatus,
+        spec: &ChainSpec
     ) -> Result<Self, String> {
         let mut proto_array = ProtoArray {
             prune_threshold: DEFAULT_PRUNE_THRESHOLD,
             nodes: Vec::with_capacity(1),
             indices: HashMap::with_capacity(1),
             previous_proposer_boost: ProposerBoost::default(),
+            envelope_indices: HashMap::with_capacity(1),
         };
 
         let block = Block {
@@ -464,6 +476,7 @@ impl ProtoArrayForkChoice {
             execution_status,
             unrealized_justified_checkpoint: Some(justified_checkpoint),
             unrealized_finalized_checkpoint: Some(finalized_checkpoint),
+            payload_invalid: false
         };
 
         proto_array
@@ -472,6 +485,8 @@ impl ProtoArrayForkChoice {
                 current_slot,
                 justified_checkpoint,
                 finalized_checkpoint,
+                spec,
+
             )
             .map_err(|e| format!("Failed to add finalized block to proto_array: {:?}", e))?;
 
@@ -527,6 +542,7 @@ impl ProtoArrayForkChoice {
         current_slot: Slot,
         justified_checkpoint: Checkpoint,
         finalized_checkpoint: Checkpoint,
+        spec: &ChainSpec,
     ) -> Result<(), String> {
         if block.parent_root.is_none() {
             return Err("Missing parent root".to_string());
@@ -538,6 +554,7 @@ impl ProtoArrayForkChoice {
                 current_slot,
                 justified_checkpoint,
                 finalized_checkpoint,
+                spec,
             )
             .map_err(|e| format!("process_block_error: {:?}", e))
     }
@@ -557,7 +574,8 @@ impl ProtoArrayForkChoice {
         let new_balances = justified_state_balances;
 
         let deltas = compute_deltas(
-            &self.proto_array.indices,
+            &self.proto_array.envelope_indices,
+            self.proto_array.indices.len(),
             &mut self.votes,
             &old_balances.effective_balances,
             &new_balances.effective_balances,
@@ -614,30 +632,30 @@ impl ProtoArrayForkChoice {
         )?;
 
         // Only re-org a single slot. This prevents cascading failures during asynchrony.
-        let head_slot_ok = info.head_node.slot + 1 == current_slot;
+        let head_slot_ok = *info.head_node.slot() + 1 == current_slot;
         if !head_slot_ok {
             return Err(DoNotReOrg::HeadDistance.into());
         }
 
         // Only re-org if the head's weight is less than the heads configured committee fraction.
-        let head_weight = info.head_node.weight;
+        let head_weight = info.head_node.weight();
         let re_org_head_weight_threshold = info.re_org_head_weight_threshold;
-        let weak_head = head_weight < re_org_head_weight_threshold;
+        let weak_head = *head_weight < re_org_head_weight_threshold;
         if !weak_head {
             return Err(DoNotReOrg::HeadNotWeak {
-                head_weight,
+                head_weight: *head_weight,
                 re_org_head_weight_threshold,
             }
             .into());
         }
 
         // Only re-org if the parent's weight is greater than the parents configured committee fraction.
-        let parent_weight = info.parent_node.weight;
+        let parent_weight = info.parent_node.weight();
         let re_org_parent_weight_threshold = info.re_org_parent_weight_threshold;
-        let parent_strong = parent_weight > re_org_parent_weight_threshold;
+        let parent_strong = *parent_weight > re_org_parent_weight_threshold;
         if !parent_strong {
             return Err(DoNotReOrg::ParentNotStrong {
-                parent_weight,
+                parent_weight: *parent_weight,
                 re_org_parent_weight_threshold,
             }
             .into());
@@ -671,14 +689,15 @@ impl ProtoArrayForkChoice {
         let parent_node = nodes.pop().ok_or(DoNotReOrg::MissingHeadOrParentNode)?;
         let head_node = nodes.pop().ok_or(DoNotReOrg::MissingHeadOrParentNode)?;
 
-        let parent_slot = parent_node.slot;
-        let head_slot = head_node.slot;
-        let re_org_block_slot = head_slot + 1;
+        let parent_slot = parent_node.slot();
+        let head_slot = head_node.slot();
+        let re_org_block_slot = *head_slot + 1;
 
         // Check finalization distance.
         let proposal_epoch = re_org_block_slot.epoch(E::slots_per_epoch());
+        // FIXME(gloas): check back
         let finalized_epoch = head_node
-            .unrealized_finalized_checkpoint
+            .unrealized_finalized_checkpoint().map_err(|_| DoNotReOrg::MissingHeadFinalizedCheckpoint)?
             .ok_or(DoNotReOrg::MissingHeadFinalizedCheckpoint)?
             .epoch;
         let epochs_since_finalization = proposal_epoch.saturating_sub(finalized_epoch).as_u64();
@@ -692,7 +711,7 @@ impl ProtoArrayForkChoice {
         // Check parent distance from head.
         // Do not check head distance from current slot, as that condition needs to be
         // late-evaluated and is elided when `current_slot == head_slot`.
-        let parent_slot_ok = parent_slot + 1 == head_slot;
+        let parent_slot_ok = *parent_slot + 1 == *head_slot;
         if !parent_slot_ok {
             return Err(DoNotReOrg::ParentDistance.into());
         }
@@ -710,10 +729,10 @@ impl ProtoArrayForkChoice {
         }
 
         // Check FFG.
-        let ffg_competitive = parent_node.unrealized_justified_checkpoint
-            == head_node.unrealized_justified_checkpoint
-            && parent_node.unrealized_finalized_checkpoint
-                == head_node.unrealized_finalized_checkpoint;
+        let ffg_competitive = parent_node.unrealized_justified_checkpoint()
+            == head_node.unrealized_justified_checkpoint()
+            && parent_node.unrealized_finalized_checkpoint()
+                == head_node.unrealized_finalized_checkpoint();
         if !ffg_competitive {
             return Err(DoNotReOrg::JustificationAndFinalizationNotCompetitive.into());
         }
@@ -739,13 +758,23 @@ impl ProtoArrayForkChoice {
     /// Returns `true` if there are any blocks in `self` with an `INVALID` execution payload status.
     ///
     /// This will operate on *all* blocks, even those that do not descend from the finalized
+    ///
     /// ancestor.
+    ///
+    /// FIXME(gloas): this needs attention. we are considering envelope is always valid payload
     pub fn contains_invalid_payloads(&mut self) -> bool {
         self.proto_array
             .nodes
             .iter()
-            .any(|node| node.execution_status.is_invalid())
+            .any(|node| {
+                match node {
+                    ProtoNode::V17(node) => { node.execution_status.is_invalid() }
+                    ProtoNode::BlockV29(node) => { node.payload_invalid }
+                    ProtoNode::EnvelopeV29(_) => { true }
+                }
+            })
     }
+
 
     /// For all nodes, regardless of their relationship to the finalized block, set their execution
     /// status to be optimistic.
@@ -769,80 +798,92 @@ impl ProtoArrayForkChoice {
                 .get_mut(node_index)
                 .ok_or("unreachable index out of bounds in proto_array nodes")?;
 
-            match node.execution_status {
-                ExecutionStatus::Invalid(block_hash) => {
-                    node.execution_status = ExecutionStatus::Optimistic(block_hash);
+            match node {
+                ProtoNode::V17(node) => {
+                    match node.execution_status {
+                        ExecutionStatus::Invalid(block_hash) => {
+                            node.execution_status = ExecutionStatus::Optimistic(block_hash);
 
-                    // Restore the weight of the node, it would have been set to `0` in
-                    // `apply_score_changes` when it was invalidated.
-                    let mut restored_weight: u64 = self
-                        .votes
-                        .0
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(validator_index, vote)| {
-                            if vote.current_root == node.root {
-                                // Any voting validator that does not have a balance should be
-                                // ignored. This is consistent with `compute_deltas`.
-                                self.balances.effective_balances.get(validator_index)
-                            } else {
-                                None
+                            // Restore the weight of the node, it would have been set to `0` in
+                            // `apply_score_changes` when it was invalidated.
+                            let mut restored_weight: u64 = self
+                                .votes
+                                .0
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(validator_index, vote)| {
+                                    if vote.current_root == node.root {
+                                        // Any voting validator that does not have a balance should be
+                                        // ignored. This is consistent with `compute_deltas`.
+                                        self.balances.effective_balances.get(validator_index)
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .sum();
+
+                            // If the invalid root was boosted, apply the weight to it and
+                            // ancestors.
+                            if let Some(proposer_score_boost) = spec.proposer_score_boost
+                            && self.proto_array.previous_proposer_boost.root == node.root
+                            {
+                                // Compute the score based upon the current balances. We can't rely on
+                                // the `previous_proposr_boost.score` since it is set to zero with an
+                                // invalid node.
+                                let proposer_score =
+                                calculate_committee_fraction::<E>(&self.balances, proposer_score_boost)
+                                    .ok_or("Failed to compute proposer boost")?;
+                                // Store the score we've applied here so it can be removed in
+                                // a later call to `apply_score_changes`.
+                                self.proto_array.previous_proposer_boost.score = proposer_score;
+                                // Apply this boost to this node.
+                                restored_weight = restored_weight
+                                    .checked_add(proposer_score)
+                                    .ok_or("Overflow when adding boost to weight")?;
                             }
-                        })
-                        .sum();
 
-                    // If the invalid root was boosted, apply the weight to it and
-                    // ancestors.
-                    if let Some(proposer_score_boost) = spec.proposer_score_boost
-                        && self.proto_array.previous_proposer_boost.root == node.root
-                    {
-                        // Compute the score based upon the current balances. We can't rely on
-                        // the `previous_proposr_boost.score` since it is set to zero with an
-                        // invalid node.
-                        let proposer_score =
-                            calculate_committee_fraction::<E>(&self.balances, proposer_score_boost)
-                                .ok_or("Failed to compute proposer boost")?;
-                        // Store the score we've applied here so it can be removed in
-                        // a later call to `apply_score_changes`.
-                        self.proto_array.previous_proposer_boost.score = proposer_score;
-                        // Apply this boost to this node.
-                        restored_weight = restored_weight
-                            .checked_add(proposer_score)
-                            .ok_or("Overflow when adding boost to weight")?;
-                    }
+                            // Add the restored weight to the node and all ancestors.
+                            if restored_weight > 0 {
+                                let mut node_or_ancestor = node;
+                                loop {
+                                    node_or_ancestor.weight = node_or_ancestor
+                                        .weight
+                                        .checked_add(restored_weight)
+                                        .ok_or("Overflow when adding weight to ancestor")?;
 
-                    // Add the restored weight to the node and all ancestors.
-                    if restored_weight > 0 {
-                        let mut node_or_ancestor = node;
-                        loop {
-                            node_or_ancestor.weight = node_or_ancestor
-                                .weight
-                                .checked_add(restored_weight)
-                                .ok_or("Overflow when adding weight to ancestor")?;
+                                    if let Some(parent_index) = node_or_ancestor.parent {
 
-                            if let Some(parent_index) = node_or_ancestor.parent {
-                                node_or_ancestor = self
-                                    .proto_array
-                                    .nodes
-                                    .get_mut(parent_index)
-                                    .ok_or(format!("Missing parent index: {}", parent_index))?;
-                            } else {
-                                // This is either the finalized block or a block that does not
-                                // descend from the finalized block.
-                                break;
+                                        node_or_ancestor = self
+                                            .proto_array
+                                            .nodes
+                                            .get_mut(parent_index)
+                                            .ok_or(format!("Missing parent index: {}", parent_index))?
+                                            .as_v17_mut()
+                                            .map_err(|_| "Unexpected node variant".to_string())?;
+                                    } else {
+                                        // This is either the finalized block or a block that does not
+                                        // descend from the finalized block.
+                                        break;
+                                    }
+                                }
                             }
                         }
+                        // There are no balance changes required if the node was either valid or
+                        // optimistic.
+                        ExecutionStatus::Valid(block_hash) | ExecutionStatus::Optimistic(block_hash) => {
+                            node.execution_status = ExecutionStatus::Optimistic(block_hash)
+                        }
+                        // An irrelevant node cannot become optimistic, this is a no-op.
+                        ExecutionStatus::Irrelevant(_) => (),
                     }
                 }
-                // There are no balance changes required if the node was either valid or
-                // optimistic.
-                ExecutionStatus::Valid(block_hash) | ExecutionStatus::Optimistic(block_hash) => {
-                    node.execution_status = ExecutionStatus::Optimistic(block_hash)
-                }
-                // An irrelevant node cannot become optimistic, this is a no-op.
-                ExecutionStatus::Irrelevant(_) => (),
+
+
+                ProtoNode::BlockV29(_) => {}
+                ProtoNode::EnvelopeV29(_) => {}
             }
         }
+
 
         Ok(())
     }
@@ -877,30 +918,56 @@ impl ProtoArrayForkChoice {
     pub fn get_block(&self, block_root: &Hash256) -> Option<Block> {
         let block = self.get_proto_node(block_root)?;
         let parent_root = block
-            .parent
+            .parent()
             .and_then(|i| self.proto_array.nodes.get(i))
-            .map(|parent| parent.root);
+            .map(|parent| parent.root());
 
-        Some(Block {
-            slot: block.slot,
-            root: block.root,
-            parent_root,
-            state_root: block.state_root,
-            target_root: block.target_root,
-            current_epoch_shuffling_id: block.current_epoch_shuffling_id.clone(),
-            next_epoch_shuffling_id: block.next_epoch_shuffling_id.clone(),
-            justified_checkpoint: block.justified_checkpoint,
-            finalized_checkpoint: block.finalized_checkpoint,
-            execution_status: block.execution_status,
-            unrealized_justified_checkpoint: block.unrealized_justified_checkpoint,
-            unrealized_finalized_checkpoint: block.unrealized_finalized_checkpoint,
-        })
+        match block {
+            ProtoNode::V17(block) => Some(Block {
+                slot: block.slot,
+                root: block.root,
+                parent_root: parent_root.copied(),
+                state_root: block.state_root,
+                target_root: block.target_root,
+                current_epoch_shuffling_id: block.current_epoch_shuffling_id.clone(),
+                next_epoch_shuffling_id: block.next_epoch_shuffling_id.clone(),
+                justified_checkpoint: block.justified_checkpoint,
+                finalized_checkpoint: block.finalized_checkpoint,
+                execution_status: block.execution_status,
+                unrealized_justified_checkpoint: block.unrealized_justified_checkpoint,
+                unrealized_finalized_checkpoint: block.unrealized_finalized_checkpoint,
+                payload_invalid: false
+            }),
+
+            ProtoNode::BlockV29(block) => Some(Block {
+                slot: block.slot,
+                root: block.root,
+                parent_root: parent_root.copied(),
+                state_root: block.state_root,
+                target_root: block.target_root,
+                current_epoch_shuffling_id: block.current_epoch_shuffling_id.clone(),
+                next_epoch_shuffling_id: block.next_epoch_shuffling_id.clone(),
+                justified_checkpoint: block.justified_checkpoint,
+                finalized_checkpoint: block.finalized_checkpoint,
+                execution_status: ExecutionStatus::irrelevant(),
+                unrealized_justified_checkpoint: block.unrealized_justified_checkpoint,
+                unrealized_finalized_checkpoint: block.unrealized_finalized_checkpoint,
+                payload_invalid: false
+            }),
+            ProtoNode::EnvelopeV29(_) => None
+        }
+
     }
 
     /// Returns the `block.execution_status` field, if the block is present.
     pub fn get_block_execution_status(&self, block_root: &Hash256) -> Option<ExecutionStatus> {
         let block = self.get_proto_node(block_root)?;
-        Some(block.execution_status)
+        match block {
+            ProtoNode::V17(node) => Some(node.execution_status),
+            ProtoNode::BlockV29(_) | ProtoNode::EnvelopeV29(_) => None
+
+        }
+
     }
 
     /// Returns the weight of a given block.
@@ -909,7 +976,7 @@ impl ProtoArrayForkChoice {
         self.proto_array
             .nodes
             .get(*block_index)
-            .map(|node| node.weight)
+            .map(|node| *node.weight())
     }
 
     /// See `ProtoArray` documentation.
@@ -1027,13 +1094,14 @@ impl ProtoArrayForkChoice {
 ///   always valid).
 // FIXME(sproul): implement get-weight changes here
 fn compute_deltas(
-    indices: &HashMap<Hash256, usize>,
+    envelope_indices: &HashMap<(Hash256, bool), usize>,
+    num_nodes: usize,
     votes: &mut ElasticList<VoteTracker>,
     old_balances: &[u64],
     new_balances: &[u64],
     equivocating_indices: &BTreeSet<u64>,
 ) -> Result<Vec<i64>, Error> {
-    let mut deltas = vec![0_i64; indices.len()];
+    let mut deltas = vec![0_i64; num_nodes];
 
     for (val_index, vote) in votes.iter_mut().enumerate() {
         // There is no need to create a score change if the validator has never voted or both their
@@ -1054,18 +1122,22 @@ fn compute_deltas(
             //
             // 1. Add a negative delta for their `current_root`.
             // 2. Set their `current_root` (permanently) to zero.
+
+            // need PTC timeliness here
+            //
             if !vote.current_root.is_zero() {
                 let old_balance = old_balances.get(val_index).copied().unwrap_or(0);
 
-                if let Some(current_delta_index) = indices.get(&vote.current_root).copied() {
-                    let delta = deltas
-                        .get(current_delta_index)
-                        .ok_or(Error::InvalidNodeDelta(current_delta_index))?
-                        .checked_sub(old_balance as i64)
-                        .ok_or(Error::DeltaOverflow(current_delta_index))?;
+                let envelope_key = (vote.current_root, vote.current_payload_present);
 
-                    // Array access safe due to check on previous line.
-                    deltas[current_delta_index] = delta;
+                if let Some(envelope_index) = envelope_indices.get(&envelope_key).copied(){
+                    let delta = deltas
+                    .get(envelope_index)
+                    .ok_or(Error::InvalidNodeDelta(envelope_index))?
+                    .checked_sub(old_balance as i64)
+                    .ok_or(Error::DeltaOverflow(envelope_index))?;
+
+                    deltas[envelope_index] = delta;
                 }
 
                 vote.current_root = Hash256::zero();
@@ -1085,34 +1157,41 @@ fn compute_deltas(
         // on-boarded less validators than the prior fork.
         let new_balance = new_balances.get(val_index).copied().unwrap_or(0);
 
-        if vote.current_root != vote.next_root || old_balance != new_balance {
+
+        if vote.current_root != vote.next_root || old_balance != new_balance
+        || vote.current_payload_present != vote.next_payload_present {
             // We ignore the vote if it is not known in `indices`. We assume that it is outside
             // of our tree (i.e., pre-finalization) and therefore not interesting.
-            if let Some(current_delta_index) = indices.get(&vote.current_root).copied() {
+            let current_key = (vote.current_root, vote.current_payload_present);
+
+            if let Some(envelope_index) = envelope_indices.get(&current_key).copied(){
                 let delta = deltas
-                    .get(current_delta_index)
-                    .ok_or(Error::InvalidNodeDelta(current_delta_index))?
+                .get(envelope_index)
+                    .ok_or(Error::InvalidNodeDelta(envelope_index))?
                     .checked_sub(old_balance as i64)
-                    .ok_or(Error::DeltaOverflow(current_delta_index))?;
+                    .ok_or(Error::DeltaOverflow(envelope_index))?;
 
-                // Array access safe due to check on previous line.
-                deltas[current_delta_index] = delta;
+                deltas[envelope_index] = delta;
             }
+
 
             // We ignore the vote if it is not known in `indices`. We assume that it is outside
             // of our tree (i.e., pre-finalization) and therefore not interesting.
-            if let Some(next_delta_index) = indices.get(&vote.next_root).copied() {
-                let delta = deltas
-                    .get(next_delta_index)
-                    .ok_or(Error::InvalidNodeDelta(next_delta_index))?
-                    .checked_add(new_balance as i64)
-                    .ok_or(Error::DeltaOverflow(next_delta_index))?;
+            let next_key = (vote.next_root, vote.next_payload_present);
 
-                // Array access safe due to check on previous line.
-                deltas[next_delta_index] = delta;
+            if let Some(envelope_index) = envelope_indices.get(&next_key).copied(){
+                let delta = deltas
+                .get(envelope_index)
+                    .ok_or(Error::InvalidNodeDelta(envelope_index))?
+                    .checked_add(new_balance as i64)
+                    .ok_or(Error::DeltaOverflow(envelope_index))?;
+
+                deltas[envelope_index] = delta;
             }
+
 
             vote.current_root = vote.next_root;
+            vote.current_payload_present = vote.next_payload_present;
         }
     }
 
@@ -1152,6 +1231,8 @@ mod test_compute_deltas {
             root: Hash256::repeat_byte(42),
         };
 
+        let chain_spec = ChainSpec::default();
+
         let mut fc = ProtoArrayForkChoice::new::<MainnetEthSpec>(
             genesis_slot,
             genesis_slot,
@@ -1161,6 +1242,8 @@ mod test_compute_deltas {
             junk_shuffling_id.clone(),
             junk_shuffling_id.clone(),
             execution_status,
+            &chain_spec,
+
         )
         .unwrap();
 
@@ -1180,10 +1263,12 @@ mod test_compute_deltas {
                     execution_status,
                     unrealized_justified_checkpoint: Some(genesis_checkpoint),
                     unrealized_finalized_checkpoint: Some(genesis_checkpoint),
+                    payload_invalid: false,
                 },
                 genesis_slot + 1,
                 genesis_checkpoint,
                 genesis_checkpoint,
+                &chain_spec,
             )
             .unwrap();
 
@@ -1205,10 +1290,12 @@ mod test_compute_deltas {
                     execution_status,
                     unrealized_justified_checkpoint: None,
                     unrealized_finalized_checkpoint: None,
+                    payload_invalid: false,
                 },
                 genesis_slot + 1,
                 genesis_checkpoint,
                 genesis_checkpoint,
+                &chain_spec,
             )
             .unwrap();
 
@@ -1296,6 +1383,8 @@ mod test_compute_deltas {
             root: get_block_root(0),
         };
 
+        let chain_spec = ChainSpec::default();
+
         let mut fc = ProtoArrayForkChoice::new::<MainnetEthSpec>(
             genesis_slot,
             genesis_slot,
@@ -1305,6 +1394,7 @@ mod test_compute_deltas {
             junk_shuffling_id.clone(),
             junk_shuffling_id.clone(),
             execution_status,
+            &chain_spec,
         )
         .unwrap();
 
@@ -1333,10 +1423,12 @@ mod test_compute_deltas {
                         execution_status,
                         unrealized_justified_checkpoint: Some(genesis_checkpoint),
                         unrealized_finalized_checkpoint: Some(genesis_checkpoint),
+                        payload_invalid: false
                     },
                     Slot::from(block.slot),
                     genesis_checkpoint,
                     genesis_checkpoint,
+                    &chain_spec,
                 )
                 .unwrap();
         };

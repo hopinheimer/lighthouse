@@ -54,6 +54,8 @@ pub enum Error {
     },
     InvalidEpochOffset(u64),
     Arith(ArithError),
+    UnexpectedNodeVariant,
+    GloasNotImplemented
 }
 
 impl From<ArithError> for Error {

@@ -397,6 +397,7 @@ where
             current_epoch_shuffling_id,
             next_epoch_shuffling_id,
             execution_status,
+            spec
         )?;
 
         let mut fork_choice = Self {
@@ -909,10 +910,12 @@ where
                 execution_status,
                 unrealized_justified_checkpoint: Some(unrealized_justified_checkpoint),
                 unrealized_finalized_checkpoint: Some(unrealized_finalized_checkpoint),
+                payload_invalid: false,
             },
             current_slot,
             self.justified_checkpoint(),
             self.finalized_checkpoint(),
+            &spec,
         )?;
 
         Ok(())
@@ -1610,6 +1613,7 @@ mod tests {
         (1..4)
             .map(|i| QueuedAttestation {
                 slot: Slot::new(i),
+                payload_present: true,
                 attesting_indices: vec![],
                 block_root: Hash256::zero(),
                 target_epoch: Epoch::new(0),
