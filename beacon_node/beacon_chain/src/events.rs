@@ -1,7 +1,7 @@
 pub use eth2::types::{EventKind, SseBlock, SseFinalizedCheckpoint, SseHead};
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::{Receiver, Sender, error::SendError};
-use tracing::trace;
+use tracing::{debug, trace};
 use types::EthSpec;
 
 const DEFAULT_CHANNEL_CAPACITY: usize = 16;
@@ -79,7 +79,7 @@ impl<E: EthSpec> ServerSentEventHandler<E> {
 
     pub fn register(&self, kind: EventKind<E>) {
         let log_count = |name, count| {
-            trace!(
+            debug!(
                 kind = name,
                 receiver_count = count,
                 "Registering server-sent event"
