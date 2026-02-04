@@ -390,7 +390,7 @@ impl ProtoArray {
                             current_slot,
                             best_justified_checkpoint,
                             best_finalized_checkpoint
-                        );
+                        )?;
 
                     }
                 }
@@ -526,7 +526,10 @@ impl ProtoArray {
                 }
 
             }
-            ProtoNode::BlockV29(_) => {}
+            ProtoNode::BlockV29(_) => {
+
+
+            }
             ProtoNode::EnvelopeV29(_) => {}
         }
 

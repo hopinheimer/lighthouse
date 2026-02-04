@@ -60,10 +60,11 @@ pub enum ExecutionStatus {
 }
 
 /// Represents the status of an execution payload post-Gloas.
-#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Encode, Decode, Serialize, Deserialize)]
 #[ssz(enum_behaviour = "tag")]
 #[repr(u8)]
 pub enum PayloadStatus {
+    #[default]
     Pending = 0,
     Empty = 1,
     Full = 2,
@@ -530,9 +531,24 @@ impl ProtoArrayForkChoice {
         if attestation_slot > vote.next_slot || *vote == VoteTracker::default() {
             vote.next_root = block_root;
             vote.next_slot = attestation_slot;
-            vote.next_payload_present = payload_present;
+            vote.current_payload_present = payload_present;
         }
 
+        Ok(())
+    }
+
+    pub fn process_payload_attestation(
+        &mut self,
+        validator_index: usize,
+        attestation_slot: Slot,
+        payload_present: bool,
+    ) -> Result<(), String> {
+
+        let vote = self.votes.get_mut(validator_index);
+
+        if attestation_slot > vote.next_slot {
+            vote.next_payload_present = payload_present;
+        }
         Ok(())
     }
 

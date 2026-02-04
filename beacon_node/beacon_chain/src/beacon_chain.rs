@@ -1434,7 +1434,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             .proto_array()
             .heads_descended_from_finalization::<T::EthSpec>(fork_choice.finalized_checkpoint())
             .iter()
-            .map(|node| (node.root, node.slot))
+            .map(|node| (*node.root(), *node.slot()))
             .collect()
     }
 
@@ -2273,6 +2273,14 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 AttestationFromBlock::False,
             )
             .map_err(Into::into)
+    }
+
+    /// Accept payload attestation object and attempts to verify it in the context of fork
+    /// choice. If it is valid it is applied to `self.fork_choice`
+    pub fn apply_payload_attestation_to_fork_choice(
+        &self
+    ){
+        error!("gloas not implemented");
     }
 
     /// Accepts an `VerifiedUnaggregatedAttestation` and attempts to apply it to the "naive
@@ -4686,7 +4694,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             })
             .ok()?;
         drop(proposer_head_timer);
-        let re_org_parent_block = proposer_head.parent_node.root;
+        let re_org_parent_block = proposer_head.parent_node.root();
 
         let (state_root, state) = self
             .store
@@ -4699,7 +4707,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         info!(
             weak_head = ?canonical_head,
             parent = ?re_org_parent_block,
-            head_weight = proposer_head.head_node.weight,
+            head_weight = proposer_head.head_node.weight(),
             threshold_weight = proposer_head.re_org_head_weight_threshold,
             "Attempting re-org due to weak head"
         );
@@ -4919,7 +4927,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
         // The slot of our potential re-org block is always 1 greater than the head block because we
         // only attempt single-slot re-orgs.
-        let head_slot = info.head_node.slot;
+        let head_slot = info.head_node.slot();
         let re_org_block_slot = head_slot + 1;
         let fork_choice_slot = info.current_slot;
 
@@ -4987,8 +4995,8 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // and the actual weight of the parent against the parent re-org threshold.
         let (head_weak, parent_strong) = if fork_choice_slot == re_org_block_slot {
             (
-                info.head_node.weight < info.re_org_head_weight_threshold,
-                info.parent_node.weight > info.re_org_parent_weight_threshold,
+                info.head_node.weight() < info.re_org_head_weight_threshold,
+                info.parent_node.weight() > info.re_org_parent_weight_threshold,
             )
         } else {
             (true, true)
@@ -4996,7 +5004,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         if !head_weak {
             return Err(Box::new(
                 DoNotReOrg::HeadNotWeak {
-                    head_weight: info.head_node.weight,
+                    head_weight: info.head_node.weight(),
                     re_org_head_weight_threshold: info.re_org_head_weight_threshold,
                 }
                 .into(),
@@ -5005,7 +5013,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         if !parent_strong {
             return Err(Box::new(
                 DoNotReOrg::ParentNotStrong {
-                    parent_weight: info.parent_node.weight,
+                    parent_weight: info.parent_node.weight(),
                     re_org_parent_weight_threshold: info.re_org_parent_weight_threshold,
                 }
                 .into(),

@@ -3,7 +3,7 @@ use crate::{ForkChoiceStore, InvalidationOperation};
 use logging::crit;
 use proto_array::{
     Block as ProtoBlock, DisallowedReOrgOffsets, ExecutionStatus, JustifiedBalances, LatestMessage,
-    ProposerHeadError, ProposerHeadInfo, ProtoArrayForkChoice, ReOrgThreshold,
+    ProposerHeadError, ProposerHeadInfo, ProtoArrayForkChoice, ReOrgThreshold, PayloadStatus,
 };
 use ssz::{Decode, Encode};
 use ssz_derive::{Decode, Encode};
@@ -19,7 +19,7 @@ use tracing::{debug, instrument, warn};
 use types::{
     AbstractExecPayload, AttestationShufflingId, AttesterSlashingRef, BeaconBlockRef, BeaconState,
     BeaconStateError, ChainSpec, Checkpoint, Epoch, EthSpec, ExecPayload, ExecutionBlockHash,
-    FixedBytesExtended, Hash256, IndexedAttestationRef, RelativeEpoch, SignedBeaconBlock, Slot,
+    FixedBytesExtended, Hash256, IndexedAttestationRef, IndexedPayloadAttestation, RelativeEpoch, SignedBeaconBlock, Slot,
     consts::bellatrix::INTERVALS_PER_SLOT,
 };
 
@@ -277,6 +277,40 @@ fn dequeue_attestations(
     std::mem::replace(queued_attestations, remaining)
 }
 
+#[derive(Clone, PartialEq, Encode, Decode)]
+pub struct QueuedPayloadAttestation {
+    slot: Slot,
+    attesting_indices: Vec<u64>,
+    block_root: Hash256,
+    payload_present: bool,
+}
+
+fn dequeue_payload_attestations(
+    current_slot: Slot,
+    queued_attestations: &mut Vec<QueuedPayloadAttestation>,
+) -> Vec<QueuedPayloadAttestation> {
+    let remaining = queued_attestations.split_off(
+        queued_attestations
+            .iter()
+            .position(|a| a.slot >= current_slot)
+            .unwrap_or(queued_attestations.len()),
+    );
+
+    //FIXME(gloas): add metrics back here
+
+    std::mem::replace(queued_attestations, remaining)
+}
+impl<E: EthSpec> From<IndexedPayloadAttestation<E>> for QueuedPayloadAttestation {
+    fn from(a: IndexedPayloadAttestation<E>) -> Self {
+        Self {
+            slot: a.data.slot,
+            attesting_indices: a.attesting_indices.to_vec(),
+            block_root: a.data.beacon_block_root,
+            payload_present: a.data.payload_present,
+        }
+    }
+}
+
 /// Denotes whether an attestation we are processing was received from a block or from gossip.
 /// Equivalent to the `is_from_block` `bool` in:
 ///
@@ -323,6 +357,9 @@ pub struct ForkChoice<T, E> {
     queued_attestations: Vec<QueuedAttestation>,
     /// Stores a cache of the values required to be sent to the execution layer.
     forkchoice_update_parameters: ForkchoiceUpdateParameters,
+    /// Payload attestations that arrive after the payload released by the builder. the
+    /// payload_attestations may or may not be of the current slot.
+    queued_payload_attestations: Vec<QueuedPayloadAttestation>,
     _phantom: PhantomData<E>,
 }
 
@@ -413,6 +450,7 @@ where
                 head_root: Hash256::zero(),
             },
             _phantom: PhantomData,
+            queued_payload_attestations: vec![],
         };
 
         // Ensure that `fork_choice.forkchoice_update_parameters.head_root` is updated.
@@ -1147,6 +1185,19 @@ where
             .extend_equivocating_indices(att1_indices.intersection(&att2_indices).copied());
     }
 
+    pub fn on_payload_attestation(
+        &mut self,
+        payload_attestation: IndexedPayloadAttestation<E>,
+        system_time_current_slot: Slot,
+    ) -> Result<(), Error<T::Error>>{
+        self.update_time(system_time_current_slot)?;
+
+        self.queued_payload_attestations.push(QueuedPayloadAttestation::from(payload_attestation));
+
+        Ok(())
+    }
+
+
     /// Call `on_tick` for all slots between `fc_store.get_current_slot()` and the provided
     /// `current_slot`. Returns the value of `self.fc_store.get_current_slot`.
     pub fn update_time(&mut self, current_slot: Slot) -> Result<Slot, Error<T::Error>> {
@@ -1159,9 +1210,12 @@ where
 
         // Process any attestations that might now be eligible.
         self.process_attestation_queue()?;
+        self.process_payload_attestation_queue()?;
 
         Ok(self.fc_store.get_current_slot())
     }
+
+    /// Register PTC votes for `ProtoNode::EnvelopeV29` which would be used
 
     /// Called whenever the current time increases.
     ///
@@ -1243,6 +1297,23 @@ where
             }
         }
 
+        Ok(())
+    }
+
+
+    fn process_payload_attestation_queue(&mut self) -> Result<(), Error<T::Error>> {
+        for payload_attestation in dequeue_payload_attestations(
+            self.fc_store.get_current_slot(),
+            &mut self.queued_payload_attestations
+        ){
+            for validator_index in payload_attestation.attesting_indices.iter() {
+                self.proto_array.process_payload_attestation(
+                    *validator_index as usize,
+                    payload_attestation.slot,
+                    payload_attestation.payload_present,
+                );
+            }
+        }
         Ok(())
     }
 
@@ -1406,6 +1477,10 @@ where
         self.fc_store.proposer_boost_root()
     }
 
+    pub fn queued_payload_attestations(&self) -> &[QueuedPayloadAttestation] {
+        &self.queued_payload_attestations
+    }
+
     /// Prunes the underlying fork choice DAG.
     pub fn prune(&mut self) -> Result<(), Error<T::Error>> {
         let finalized_root = self.fc_store.finalized_checkpoint().root;
@@ -1485,6 +1560,7 @@ where
             fc_store,
             proto_array,
             queued_attestations: persisted.queued_attestations,
+            queued_payload_attestations: persisted.queued_payload_attestations,
             // Will be updated in the following call to `Self::get_head`.
             forkchoice_update_parameters: ForkchoiceUpdateParameters {
                 head_hash: None,
@@ -1527,6 +1603,7 @@ where
                 .proto_array()
                 .as_ssz_container(self.justified_checkpoint(), self.finalized_checkpoint()),
             queued_attestations: self.queued_attestations().to_vec(),
+            queued_payload_attestations: self.queued_payload_attestations().to_vec(),
         }
     }
 
@@ -1540,19 +1617,21 @@ where
 ///
 /// This is used when persisting the state of the fork choice to disk.
 #[superstruct(
-    variants(V17, V28),
+    variants(V17, V28, V29),
     variant_attributes(derive(Encode, Decode, Clone)),
     no_enum
 )]
 pub struct PersistedForkChoice {
     #[superstruct(only(V17))]
     pub proto_array_bytes: Vec<u8>,
-    #[superstruct(only(V28))]
+    #[superstruct(only(V28, V29))]
     pub proto_array: proto_array::core::SszContainerV28,
     pub queued_attestations: Vec<QueuedAttestation>,
+    #[superstruct(only(V29))]
+    pub queued_payload_attestations: Vec<QueuedPayloadAttestation>,
 }
 
-pub type PersistedForkChoice = PersistedForkChoiceV28;
+pub type PersistedForkChoice = PersistedForkChoiceV29;
 
 impl TryFrom<PersistedForkChoiceV17> for PersistedForkChoiceV28 {
     type Error = ssz::DecodeError;
@@ -1580,6 +1659,10 @@ impl From<(PersistedForkChoiceV28, JustifiedBalances)> for PersistedForkChoiceV1
         }
     }
 }
+
+
+
+
 
 #[cfg(test)]
 mod tests {
