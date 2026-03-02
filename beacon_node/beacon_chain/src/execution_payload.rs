@@ -109,12 +109,19 @@ impl<T: BeaconChainTypes> PayloadNotifier<T> {
         if let Some(precomputed_status) = self.payload_verification_status {
             Ok(precomputed_status)
         } else {
-            notify_new_payload(&self.chain, self.block.message()).await
+            notify_new_payload(
+                &self.chain,
+                self.block.message().tree_hash_root(),
+                self.block.message().slot(),
+                self.block.message().parent_root(),
+                self.block.message().try_into()?,
+            )
+            .await
         }
     }
 }
 
-/// Verify that `execution_payload` contained by `block` is considered valid by an execution
+/// Verify that `execution_payload` associated with `beacon_block_root` is considered valid by an execution
 /// engine.
 ///
 /// ## Specification
@@ -123,17 +130,22 @@ impl<T: BeaconChainTypes> PayloadNotifier<T> {
 /// contains a few extra checks by running `partially_verify_execution_payload` first:
 ///
 /// https://github.com/ethereum/consensus-specs/blob/v1.1.9/specs/bellatrix/beacon-chain.md#notify_new_payload
-async fn notify_new_payload<T: BeaconChainTypes>(
+pub async fn notify_new_payload<T: BeaconChainTypes>(
     chain: &Arc<BeaconChain<T>>,
-    block: BeaconBlockRef<'_, T::EthSpec>,
+    beacon_block_root: Hash256,
+    slot: Slot,
+    parent_beacon_block_root: Hash256,
+    new_payload_request: NewPayloadRequest<'_, T::EthSpec>,
 ) -> Result<PayloadVerificationStatus, BlockError> {
     let execution_layer = chain
         .execution_layer
         .as_ref()
         .ok_or(ExecutionPayloadError::NoExecutionConnection)?;
 
-    let execution_block_hash = block.execution_payload()?.block_hash();
-    let new_payload_response = execution_layer.notify_new_payload(block.try_into()?).await;
+    let execution_block_hash = new_payload_request.execution_payload_ref().block_hash();
+    let new_payload_response = execution_layer
+        .notify_new_payload(new_payload_request.clone())
+        .await;
 
     match new_payload_response {
         Ok(status) => match status {
@@ -149,10 +161,8 @@ async fn notify_new_payload<T: BeaconChainTypes>(
                     ?validation_error,
                     ?latest_valid_hash,
                     ?execution_block_hash,
-                    root = ?block.tree_hash_root(),
-                    graffiti = block.body().graffiti().as_utf8_lossy(),
-                    proposer_index = block.proposer_index(),
-                    slot = %block.slot(),
+                    root = ?beacon_block_root,
+                    %slot,
                     method = "new_payload",
                     "Invalid execution payload"
                 );
@@ -175,11 +185,9 @@ async fn notify_new_payload<T: BeaconChainTypes>(
                 {
                     // This block has not yet been applied to fork choice, so the latest block that was
                     // imported to fork choice was the parent.
-                    let latest_root = block.parent_root();
-
                     chain
                         .process_invalid_execution_payload(&InvalidationOperation::InvalidateMany {
-                            head_block_root: latest_root,
+                            head_block_root: parent_beacon_block_root,
                             always_invalidate_head: false,
                             latest_valid_ancestor: latest_valid_hash,
                         })
@@ -194,10 +202,8 @@ async fn notify_new_payload<T: BeaconChainTypes>(
                 warn!(
                     ?validation_error,
                     ?execution_block_hash,
-                    root = ?block.tree_hash_root(),
-                    graffiti = block.body().graffiti().as_utf8_lossy(),
-                    proposer_index = block.proposer_index(),
-                    slot = %block.slot(),
+                    root = ?beacon_block_root,
+                    %slot,
                     method = "new_payload",
                     "Invalid execution payload block hash"
                 );
@@ -297,9 +303,18 @@ pub fn get_execution_payload<T: BeaconChainTypes>(
     let timestamp =
         compute_timestamp_at_slot(state, state.slot(), spec).map_err(BeaconStateError::from)?;
     let random = *state.get_randao_mix(current_epoch)?;
-    let latest_execution_payload_header = state.latest_execution_payload_header()?;
-    let latest_execution_payload_header_block_hash = latest_execution_payload_header.block_hash();
-    let latest_execution_payload_header_gas_limit = latest_execution_payload_header.gas_limit();
+    // In GLOAS (ePBS), the execution payload header is replaced by
+    // `latest_block_hash` and `latest_execution_payload_bid`.
+    let (latest_execution_payload_header_block_hash, latest_execution_payload_header_gas_limit) =
+        if state.fork_name_unchecked() == ForkName::Gloas {
+            (
+                *state.latest_block_hash()?,
+                state.latest_execution_payload_bid()?.gas_limit,
+            )
+        } else {
+            let header = state.latest_execution_payload_header()?;
+            (header.block_hash(), header.gas_limit())
+        };
     let withdrawals = if state.fork_name_unchecked().capella_enabled() {
         Some(Withdrawals::<T::EthSpec>::from(get_expected_withdrawals(state, spec)?).into())
     } else {

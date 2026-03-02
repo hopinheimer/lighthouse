@@ -10,6 +10,7 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::Arc;
+use std::thread::sleep;
 use std::time::Duration;
 use task_executor::TaskExecutor;
 use tokio::sync::mpsc;
@@ -145,6 +146,7 @@ impl<S: ValidatorStore, T: SlotClock + 'static> BlockServiceBuilder<S, T> {
 
 // Combines a set of non-block-proposing `beacon_nodes` and only-block-proposing
 // `proposer_nodes`.
+#[derive(Clone)]
 pub struct ProposerFallback<T> {
     beacon_nodes: Arc<BeaconNodeFallback<T>>,
     proposer_nodes: Option<Arc<BeaconNodeFallback<T>>>,
@@ -619,6 +621,8 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> BlockService<S, T> {
                 unsigned_block,
             )
             .await?;
+
+        sleep(Duration::from_secs(4));
 
         // TODO(gloas) we only need to fetch, sign and publish the envelope in the local building case.
         // Right now we always default to local building. Once we implement trustless/trusted builder logic
