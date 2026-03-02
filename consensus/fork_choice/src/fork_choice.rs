@@ -664,6 +664,17 @@ where
         }
     }
 
+    /// Process an execution payload for a GLOAS block. Records that the payload has been
+    /// received, updating the node's tiebreak for `is_payload_timely` / `is_payload_data_available`.
+    pub fn on_execution_payload(
+        &mut self,
+        block_root: Hash256,
+    ) -> Result<(), Error<T::Error>> {
+        self.proto_array
+            .on_execution_payload(block_root)
+            .map_err(Error::FailedToProcessValidExecutionPayload)
+    }
+
     /// See `ProtoArrayForkChoice::process_execution_payload_validation` for documentation.
     pub fn on_valid_execution_payload(
         &mut self,

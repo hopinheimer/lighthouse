@@ -567,6 +567,30 @@ impl ProtoArray {
 
     /// Updates the `block_root` and all ancestors to have validated execution payloads.
     ///
+    /// Process an execution payload for a GLOAS block.
+    ///
+    /// Per the spec's `on_execution_payload`: records that the payload has been received and is
+    /// locally available. This updates the V29 node's tiebreak so that `is_payload_timely` and
+    /// `is_payload_data_available` reflect local availability.
+    pub fn on_execution_payload(&mut self, block_root: Hash256) -> Result<(), Error> {
+        let index = *self
+            .indices
+            .get(&block_root)
+            .ok_or(Error::NodeUnknown(block_root))?;
+        let node = self
+            .nodes
+            .get_mut(index)
+            .ok_or(Error::InvalidNodeIndex(index))?;
+        let v29 = node.as_v29_mut().map_err(|_| Error::InvalidNodeVariant {
+            block_root,
+        })?;
+        v29.payload_tiebreak = PayloadTiebreak {
+            is_timely: true,
+            is_data_available: true,
+        };
+        Ok(())
+    }
+
     /// Returns an error if:
     ///
     /// - The `block-root` is unknown.

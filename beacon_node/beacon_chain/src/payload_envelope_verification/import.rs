@@ -282,7 +282,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         // avoiding taking other locks whilst holding this lock.
         let mut fork_choice = parking_lot::RwLockUpgradableReadGuard::upgrade(fork_choice_reader);
 
-        // Update the node's payload_status from PENDING to FULL in fork choice.
+        // Record that the execution payload has been received for this block.
         fork_choice
             .on_execution_payload(block_root)
             .map_err(|e| EnvelopeError::InternalError(format!("{e:?}")))?;
