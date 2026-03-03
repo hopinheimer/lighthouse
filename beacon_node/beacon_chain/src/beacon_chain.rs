@@ -1664,17 +1664,25 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     /// This function will try to use the shuffling cache to return the value. If the value is not
     /// in the shuffling cache, it will be added. Care should be taken not to wash out the
     /// shuffling cache with historical/useless values.
+    /// TODO(gloas): resolve the complex
+    #[allow(clippy::type_complexity)]
     pub fn validator_attestation_duties(
         &self,
         validator_indices: &[u64],
         epoch: Epoch,
         head_block_root: Hash256,
-    ) -> Result<(Vec<Option<AttestationDuty>>, Hash256, ExecutionStatus), Error> {
+    ) -> Result<
+        (
+            Vec<Option<AttestationDuty>>,
+            Hash256,
+            Option<ExecutionStatus>,
+        ),
+        Error,
+    > {
         let execution_status = self
             .canonical_head
             .fork_choice_read_lock()
-            .get_block_execution_status(&head_block_root)
-            .ok_or(Error::AttestationHeadNotInForkChoice(head_block_root))?;
+            .get_block_execution_status(&head_block_root);
 
         let (duties, dependent_root) = self.with_committee_cache(
             head_block_root,
@@ -1814,14 +1822,13 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         attestation: Attestation<T::EthSpec>,
     ) -> Result<Attestation<T::EthSpec>, Error> {
         let beacon_block_root = attestation.data().beacon_block_root;
-        match self
-            .canonical_head
-            .fork_choice_read_lock()
-            .get_block_execution_status(&beacon_block_root)
-        {
-            // The attestation references a block that is not in fork choice, it must be
-            // pre-finalization.
-            None => Err(Error::CannotAttestToFinalizedBlock { beacon_block_root }),
+        let fc = self.canonical_head.fork_choice_read_lock();
+        if !fc.contains_block(&beacon_block_root) {
+            return Err(Error::CannotAttestToFinalizedBlock { beacon_block_root });
+        }
+        match fc.get_block_execution_status(&beacon_block_root) {
+            // V29 (GLOAS) nodes: no execution status, always valid.
+            None => Ok(attestation),
             // The attestation references a fully valid `beacon_block_root`.
             Some(execution_status) if execution_status.is_valid_or_irrelevant() => Ok(attestation),
             // The attestation references a block that has not been verified by an EL (i.e. it
@@ -1855,14 +1862,13 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         contribution: SyncCommitteeContribution<T::EthSpec>,
     ) -> Result<SyncCommitteeContribution<T::EthSpec>, Error> {
         let beacon_block_root = contribution.beacon_block_root;
-        match self
-            .canonical_head
-            .fork_choice_read_lock()
-            .get_block_execution_status(&beacon_block_root)
-        {
-            // The contribution references a block that is not in fork choice, it must be
-            // pre-finalization.
-            None => Err(Error::SyncContributionDataReferencesFinalizedBlock { beacon_block_root }),
+        let fc = self.canonical_head.fork_choice_read_lock();
+        if !fc.contains_block(&beacon_block_root) {
+            return Err(Error::SyncContributionDataReferencesFinalizedBlock { beacon_block_root });
+        }
+        match fc.get_block_execution_status(&beacon_block_root) {
+            // V29 (GLOAS) nodes: no execution status, always valid.
+            None => Ok(contribution),
             // The contribution references a fully valid `beacon_block_root`.
             Some(execution_status) if execution_status.is_valid_or_irrelevant() => Ok(contribution),
             // The contribution references a block that has not been verified by an EL (i.e. it
@@ -2011,11 +2017,13 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         drop(head_timer);
 
         // Only attest to a block if it is fully verified (i.e. not optimistic or invalid).
-        match self
-            .canonical_head
-            .fork_choice_read_lock()
-            .get_block_execution_status(&beacon_block_root)
-        {
+        let fc = self.canonical_head.fork_choice_read_lock();
+        if !fc.contains_block(&beacon_block_root) {
+            return Err(Error::HeadMissingFromForkChoice(beacon_block_root));
+        }
+        match fc.get_block_execution_status(&beacon_block_root) {
+            // V29 (GLOAS) nodes don't have execution status — always valid.
+            None => (),
             Some(execution_status) if execution_status.is_valid_or_irrelevant() => (),
             Some(execution_status) => {
                 return Err(Error::HeadBlockNotFullyVerified {
@@ -2023,8 +2031,8 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     execution_status,
                 });
             }
-            None => return Err(Error::HeadMissingFromForkChoice(beacon_block_root)),
         };
+        drop(fc);
 
         /*
          *  Phase 2/2:
@@ -6339,7 +6347,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
     pub fn is_optimistic_or_invalid_head(&self) -> Result<bool, BeaconChainError> {
         self.canonical_head
             .head_execution_status()
-            .map(|status| status.is_optimistic_or_invalid())
+            .map(|opt_status| opt_status.is_some_and(|status| status.is_optimistic_or_invalid()))
     }
 
     pub fn is_optimistic_or_invalid_block_root(

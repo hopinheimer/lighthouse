@@ -33,7 +33,7 @@ impl StateId {
                     .map_err(warp_utils::reject::unhandled_error)?;
                 return Ok((
                     cached_head.head_state_root(),
-                    execution_status.is_optimistic_or_invalid(),
+                    execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
                     false,
                 ));
             }
@@ -181,7 +181,7 @@ impl StateId {
                     .map_err(warp_utils::reject::unhandled_error)?;
                 return Ok((
                     cached_head.snapshot.beacon_state.clone(),
-                    execution_status.is_optimistic_or_invalid(),
+                    execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
                     false,
                 ));
             }
@@ -229,7 +229,7 @@ impl StateId {
                     .map_err(warp_utils::reject::unhandled_error)?;
                 return func(
                     &head.snapshot.beacon_state,
-                    execution_status.is_optimistic_or_invalid(),
+                    execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
                     false,
                 );
             }

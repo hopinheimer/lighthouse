@@ -581,9 +581,9 @@ impl ProtoArray {
             .nodes
             .get_mut(index)
             .ok_or(Error::InvalidNodeIndex(index))?;
-        let v29 = node.as_v29_mut().map_err(|_| Error::InvalidNodeVariant {
-            block_root,
-        })?;
+        let v29 = node
+            .as_v29_mut()
+            .map_err(|_| Error::InvalidNodeVariant { block_root })?;
         v29.payload_tiebreak = PayloadTiebreak {
             is_timely: true,
             is_data_available: true,

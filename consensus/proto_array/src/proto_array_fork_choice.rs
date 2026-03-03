@@ -499,10 +499,7 @@ impl ProtoArrayForkChoice {
     }
 
     /// See `ProtoArray::on_execution_payload` for documentation.
-    pub fn on_execution_payload(
-        &mut self,
-        block_root: Hash256,
-    ) -> Result<(), String> {
+    pub fn on_execution_payload(&mut self, block_root: Hash256) -> Result<(), String> {
         self.proto_array
             .on_execution_payload(block_root)
             .map_err(|e| format!("Failed to process execution payload: {:?}", e))
@@ -962,6 +959,9 @@ impl ProtoArrayForkChoice {
     }
 
     /// Returns the `block.execution_status` field, if the block is present.
+    ///
+    /// Returns `None` for V29 (GLOAS) nodes since execution payload status is
+    /// decoupled from the beacon block post-GLOAS.
     pub fn get_block_execution_status(&self, block_root: &Hash256) -> Option<ExecutionStatus> {
         let block = self.get_proto_node(block_root)?;
         block.execution_status().ok()

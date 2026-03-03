@@ -249,10 +249,13 @@ where
 /// - Legacy dependent root (last block of epoch `N - 1`).
 /// - Head execution status.
 /// - Fork at `request_epoch`.
+///
+/// TODO(gloas): resolve type complexity
+#[allow(clippy::type_complexity)]
 pub fn compute_proposer_duties_from_head<T: BeaconChainTypes>(
     request_epoch: Epoch,
     chain: &BeaconChain<T>,
-) -> Result<(Vec<usize>, Hash256, Hash256, ExecutionStatus, Fork), BeaconChainError> {
+) -> Result<(Vec<usize>, Hash256, Hash256, Option<ExecutionStatus>, Fork), BeaconChainError> {
     // Atomically collect information about the head whilst holding the canonical head `Arc` as
     // short as possible.
     let (mut state, head_state_root, head_block_root) = {
@@ -267,8 +270,7 @@ pub fn compute_proposer_duties_from_head<T: BeaconChainTypes>(
     let execution_status = chain
         .canonical_head
         .fork_choice_read_lock()
-        .get_block_execution_status(&head_block_root)
-        .ok_or(BeaconChainError::HeadMissingFromForkChoice(head_block_root))?;
+        .get_block_execution_status(&head_block_root);
 
     // Advance the state into the requested epoch.
     ensure_state_can_determine_proposers_for_epoch(

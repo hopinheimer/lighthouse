@@ -52,7 +52,7 @@ impl BlockId {
                     .map_err(warp_utils::reject::unhandled_error)?;
                 Ok((
                     cached_head.head_block_root(),
-                    execution_status.is_optimistic_or_invalid(),
+                    execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
                     false,
                 ))
             }
@@ -168,7 +168,7 @@ impl BlockId {
                     .map_err(warp_utils::reject::unhandled_error)?;
                 Ok((
                     cached_head.snapshot.beacon_block.clone_as_blinded(),
-                    execution_status.is_optimistic_or_invalid(),
+                    execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
                     false,
                 ))
             }
@@ -225,7 +225,7 @@ impl BlockId {
                     .map_err(warp_utils::reject::unhandled_error)?;
                 Ok((
                     cached_head.snapshot.beacon_block.clone(),
-                    execution_status.is_optimistic_or_invalid(),
+                    execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
                     false,
                 ))
             }

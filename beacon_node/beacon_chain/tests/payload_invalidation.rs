@@ -1320,6 +1320,7 @@ impl InvalidHeadSetup {
             rig.canonical_head()
                 .head_execution_status()
                 .unwrap()
+                .unwrap()
                 .is_invalid()
         );
 

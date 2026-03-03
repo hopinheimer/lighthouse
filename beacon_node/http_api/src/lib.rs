@@ -681,7 +681,7 @@ pub fn serve<T: BeaconChainTypes>(
                                 (
                                     cached_head.head_block_root(),
                                     cached_head.snapshot.beacon_block.clone_as_blinded(),
-                                    execution_status.is_optimistic_or_invalid(),
+                                    execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
                                     false,
                                 )
                             }
@@ -2244,7 +2244,8 @@ pub fn serve<T: BeaconChainTypes>(
                             // Taking advantage of saturating subtraction on slot.
                             let sync_distance = current_slot - head_slot;
 
-                            let is_optimistic = head_execution_status.is_optimistic_or_invalid();
+                            let is_optimistic =
+                                head_execution_status.is_some_and(|s| s.is_optimistic_or_invalid());
 
                             // When determining sync status, make an exception for single-node
                             // testnets with 0 peers.

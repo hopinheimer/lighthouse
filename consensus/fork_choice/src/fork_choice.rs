@@ -666,10 +666,7 @@ where
 
     /// Process an execution payload for a GLOAS block. Records that the payload has been
     /// received, updating the node's tiebreak for `is_payload_timely` / `is_payload_data_available`.
-    pub fn on_execution_payload(
-        &mut self,
-        block_root: Hash256,
-    ) -> Result<(), Error<T::Error>> {
+    pub fn on_execution_payload(&mut self, block_root: Hash256) -> Result<(), Error<T::Error>> {
         self.proto_array
             .on_execution_payload(block_root)
             .map_err(Error::FailedToProcessValidExecutionPayload)
@@ -1545,6 +1542,9 @@ where
     ) -> Result<bool, Error<T::Error>> {
         if let Some(status) = self.get_block_execution_status(block_root) {
             Ok(status.is_optimistic_or_invalid())
+        } else if self.proto_array.contains_block(block_root) {
+            // V29 (GLOAS) nodes don't have execution status — not optimistic.
+            Ok(false)
         } else {
             Err(Error::MissingProtoArrayBlock(*block_root))
         }

@@ -98,8 +98,8 @@ use task_executor::JoinHandle;
 use tracing::{Instrument, Span, debug, debug_span, error, info_span, instrument, warn};
 use types::{
     BeaconBlockRef, BeaconState, BeaconStateError, BlobsList, ChainSpec, DataColumnSidecarList,
-    Epoch, EthSpec, FullPayload, Hash256, InconsistentFork, KzgProofs,
-    RelativeEpoch, SignedBeaconBlock, SignedBeaconBlockHeader, Slot, StatePayloadStatus,
+    Epoch, EthSpec, FullPayload, Hash256, InconsistentFork, KzgProofs, RelativeEpoch,
+    SignedBeaconBlock, SignedBeaconBlockHeader, Slot, StatePayloadStatus,
     data::DataColumnSidecarError,
 };
 

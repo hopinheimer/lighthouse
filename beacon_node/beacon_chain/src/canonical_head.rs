@@ -343,30 +343,35 @@ impl<T: BeaconChainTypes> CanonicalHead<T> {
 
     /// Returns the execution status of the block at the head of the beacon chain.
     ///
-    /// This will only return `Err` in the scenario where `self.fork_choice` has advanced
-    /// significantly past the cached `head_snapshot`. In such a scenario it is likely prudent to
-    /// run `BeaconChain::recompute_head` to update the cached values.
-    pub fn head_execution_status(&self) -> Result<ExecutionStatus, Error> {
+    /// Returns `None` for V29 (GLOAS) nodes since the execution payload is decoupled
+    /// from the beacon block post-GLOAS.
+    ///
+    /// Returns `Err` only if the head block is not found in fork choice at all.
+    pub fn head_execution_status(&self) -> Result<Option<ExecutionStatus>, Error> {
         let head_block_root = self.cached_head().head_block_root();
-        self.fork_choice_read_lock()
-            .get_block_execution_status(&head_block_root)
-            .ok_or(Error::HeadMissingFromForkChoice(head_block_root))
+        let fc = self.fork_choice_read_lock();
+        if !fc.contains_block(&head_block_root) {
+            return Err(Error::HeadMissingFromForkChoice(head_block_root));
+        }
+        Ok(fc.get_block_execution_status(&head_block_root))
     }
 
     /// Returns a clone of the `CachedHead` and the execution status of the contained head block.
     ///
-    /// This will only return `Err` in the scenario where `self.fork_choice` has advanced
-    /// significantly past the cached `head_snapshot`. In such a scenario it is likely prudent to
-    /// run `BeaconChain::recompute_head` to update the cached values.
+    /// The execution status is `None` for V29 (GLOAS) nodes since the execution payload
+    /// is decoupled from the beacon block post-GLOAS.
+    ///
+    /// Returns `Err` only if the head block is not found in fork choice at all.
     pub fn head_and_execution_status(
         &self,
-    ) -> Result<(CachedHead<T::EthSpec>, ExecutionStatus), Error> {
+    ) -> Result<(CachedHead<T::EthSpec>, Option<ExecutionStatus>), Error> {
         let head = self.cached_head();
         let head_block_root = head.head_block_root();
-        let execution_status = self
-            .fork_choice_read_lock()
-            .get_block_execution_status(&head_block_root)
-            .ok_or(Error::HeadMissingFromForkChoice(head_block_root))?;
+        let fc = self.fork_choice_read_lock();
+        if !fc.contains_block(&head_block_root) {
+            return Err(Error::HeadMissingFromForkChoice(head_block_root));
+        }
+        let execution_status = fc.get_block_execution_status(&head_block_root);
         Ok((head, execution_status))
     }
 

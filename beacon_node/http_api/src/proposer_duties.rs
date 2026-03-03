@@ -67,7 +67,7 @@ pub fn proposer_duties<T: BeaconChainTypes>(
             chain,
             request_epoch,
             legacy_dependent_root,
-            execution_status.is_optimistic_or_invalid(),
+            execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
             proposers,
         )
     } else if request_epoch
@@ -172,7 +172,7 @@ fn compute_and_cache_proposer_duties<T: BeaconChainTypes>(
         chain,
         current_epoch,
         legacy_dependent_root,
-        execution_status.is_optimistic_or_invalid(),
+        execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
         indices,
     )
 }
@@ -197,7 +197,7 @@ fn compute_historic_proposer_duties<T: BeaconChainTypes>(
             Some((
                 head.beacon_state_root(),
                 head.beacon_state.clone(),
-                execution_status.is_optimistic_or_invalid(),
+                execution_status.is_some_and(|s| s.is_optimistic_or_invalid()),
             ))
         } else {
             None
