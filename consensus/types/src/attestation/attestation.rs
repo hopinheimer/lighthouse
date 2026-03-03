@@ -102,6 +102,13 @@ impl<E: EthSpec> Hash for Attestation<E> {
 
 impl<E: EthSpec> Attestation<E> {
     /// Produces an attestation with empty signature.
+    ///
+    /// The `payload_status` parameter is used for GLOAS+ (EIP-7732) to encode payload
+    /// availability in `data.index`:
+    /// - Same-slot attestations: callers pass `false` (data.index = 0)
+    /// - Non-same-slot attestations: pass `true` if payload available (data.index = 1),
+    ///   `false` if absent (data.index = 0)
+    /// Pre-GLOAS: this parameter is ignored.
     pub fn empty_for_signing(
         committee_index: u64,
         committee_length: usize,
@@ -110,18 +117,20 @@ impl<E: EthSpec> Attestation<E> {
         source: Checkpoint,
         target: Checkpoint,
         spec: &ChainSpec,
+        payload_status: bool,
     ) -> Result<Self, Error> {
         if spec.fork_name_at_slot::<E>(slot).electra_enabled() {
             let mut committee_bits: BitVector<E::MaxCommitteesPerSlot> = BitVector::default();
             committee_bits
                 .set(committee_index as usize, true)
                 .map_err(|_| Error::InvalidCommitteeIndex)?;
+            let index = if payload_status { 1u64 } else { 0u64 };
             Ok(Attestation::Electra(AttestationElectra {
                 aggregation_bits: BitList::with_capacity(committee_length)
                     .map_err(|_| Error::InvalidCommitteeLength)?,
                 data: AttestationData {
                     slot,
-                    index: 0u64,
+                    index,
                     beacon_block_root,
                     source,
                     target,

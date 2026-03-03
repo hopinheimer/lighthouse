@@ -1937,7 +1937,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
         let beacon_block_root;
         let beacon_state_root;
         let target;
-        let current_epoch_attesting_info: Option<(Checkpoint, usize)>;
+        let current_epoch_attesting_info: Option<(Checkpoint, usize, bool)>;
         let head_timer = metrics::start_timer(&metrics::ATTESTATION_PRODUCTION_HEAD_SCRAPE_SECONDS);
         let head_span = debug_span!("attestation_production_head_scrape").entered();
         // The following braces are to prevent the `cached_head` Arc from being held for longer than
@@ -2000,12 +2000,23 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             current_epoch_attesting_info = if head_state.current_epoch() == request_epoch {
                 // When the head state is in the same epoch as the request, all the information
                 // required to attest is available on the head state.
+                let committee_len = head_state
+                    .get_beacon_committee(request_slot, request_index)?
+                    .committee
+                    .len();
+
+                // Compute payload_status for GLOAS (EIP-7732).
+                // For same-slot attestations or pre-GLOAS, payload_status is false.
+                // For non-same-slot GLOAS attestations, it reflects execution payload
+                // availability.
+                let payload_status = self
+                    .compute_attestation_payload_status(head_state, request_slot, beacon_block_root)
+                    .unwrap_or(false);
+
                 Some((
                     head_state.current_justified_checkpoint(),
-                    head_state
-                        .get_beacon_committee(request_slot, request_index)?
-                        .committee
-                        .len(),
+                    committee_len,
+                    payload_status,
                 ))
             } else {
                 // If the head state is in a *different* epoch to the request, more work is required
@@ -2040,11 +2051,13 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
          *  If the justified checkpoint and committee length from the head are suitable for this
          *  attestation, use them. If not, use the database, which will hit the state cache.
          */
-        let (justified_checkpoint, committee_len) =
-            if let Some((justified_checkpoint, committee_len)) = current_epoch_attesting_info {
+        let (justified_checkpoint, committee_len, payload_status) =
+            if let Some((justified_checkpoint, committee_len, payload_status)) =
+                current_epoch_attesting_info
+            {
                 // The head state is in the same epoch as the attestation, so there is no more
                 // required information.
-                (justified_checkpoint, committee_len)
+                (justified_checkpoint, committee_len, payload_status)
             } else {
                 let (advanced_state_root, mut state) = self
                     .store
@@ -2067,12 +2080,17 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                     state.build_committee_cache(RelativeEpoch::Current, &self.spec)?;
                 }
 
+                let payload_status = self
+                    .compute_attestation_payload_status(&state, request_slot, beacon_block_root)
+                    .unwrap_or(false);
+
                 (
                     state.current_justified_checkpoint(),
                     state
                         .get_beacon_committee(request_slot, request_index)?
                         .committee
                         .len(),
+                    payload_status,
                 )
             };
 
@@ -2084,7 +2102,63 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
             justified_checkpoint,
             target,
             &self.spec,
+            payload_status,
         )?)
+    }
+
+    /// Compute the `payload_status` for an attestation being produced (GLOAS/EIP-7732).
+    ///
+    /// Returns `true` if the execution payload at `request_slot` was available (non-same-slot
+    /// attestation in GLOAS), `false` otherwise. Pre-GLOAS or same-slot attestations always
+    /// return `false`.
+    ///
+    /// If the state has not advanced past `request_slot`, defaults to `false` (unknown).
+    fn compute_attestation_payload_status(
+        &self,
+        state: &BeaconState<T::EthSpec>,
+        request_slot: Slot,
+        beacon_block_root: Hash256,
+    ) -> Result<bool, Error> {
+        if !self
+            .spec
+            .fork_name_at_slot::<T::EthSpec>(request_slot)
+            .gloas_enabled()
+        {
+            return Ok(false);
+        }
+
+        // If the state hasn't advanced past request_slot, we can't determine payload
+        // availability from block_roots. This covers same-slot attestations
+        // (request_slot == state.slot()) and future slots (request_slot > state.slot()).
+        if request_slot >= state.slot() {
+            return Ok(false);
+        }
+
+        // Check if this is a same-slot attestation using the spec's definition:
+        // beacon_block_root == block_root_at(slot) && beacon_block_root != block_root_at(slot - 1)
+        let is_same_slot = if request_slot == Slot::new(0) {
+            true
+        } else {
+            let slot_block_root = *state.get_block_root(request_slot)?;
+            let prev_block_root = *state.get_block_root(request_slot.saturating_sub(1u64))?;
+            beacon_block_root == slot_block_root && beacon_block_root != prev_block_root
+        };
+
+        if is_same_slot {
+            return Ok(false);
+        }
+
+        // Non-same-slot: read execution payload availability from the state.
+        let slot_index = request_slot
+            .as_usize()
+            .checked_rem(T::EthSpec::slots_per_historical_root())
+            .ok_or(BeaconStateError::SlotOutOfBounds)?;
+        let payload_available = state
+            .execution_payload_availability()?
+            .get(slot_index)
+            .map_err(|_| BeaconStateError::InvalidExecutionPayloadAvailabilityIndex(slot_index))?;
+
+        Ok(payload_available)
     }
 
     /// Performs the same validation as `Self::verify_unaggregated_attestation_for_gossip`, but for

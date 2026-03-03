@@ -205,6 +205,7 @@ impl<E: EthSpec> EarlyAttesterCache<E> {
             item.source,
             item.target,
             spec,
+            false,
         )
         .map_err(Error::AttestationError)?;
 

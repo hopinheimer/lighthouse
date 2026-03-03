@@ -539,6 +539,10 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> AttestationService<S, 
                 continue;
             }
 
+            // Preserve the BN's payload status from attestation_data.index (GLOAS/EIP-7732).
+            // The BN computed the correct value; the VC trusts and forwards it.
+            let payload_status = attestation_data.index == 1;
+
             let attestation = match Attestation::empty_for_signing(
                 duty.committee_index,
                 duty.committee_length as usize,
@@ -547,6 +551,7 @@ impl<S: ValidatorStore + 'static, T: SlotClock + 'static> AttestationService<S, 
                 attestation_data.source,
                 attestation_data.target,
                 &self.chain_spec,
+                payload_status,
             ) {
                 Ok(attestation) => attestation,
                 Err(err) => {
