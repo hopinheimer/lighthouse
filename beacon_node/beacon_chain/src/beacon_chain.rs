@@ -6125,6 +6125,12 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 return Ok(());
             };
 
+        let head_payload_status = self
+            .canonical_head
+            .cached_head()
+            .head_payload_status()
+            .as_state_payload_status();
+
         let forkchoice_updated_response = execution_layer
             .notify_forkchoice_updated(
                 head_hash,
