@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-    BeaconChain, BeaconChainTypes, CanonicalHead,
+    BeaconChain, BeaconChainTypes, BeaconStore, CanonicalHead,
     proposer_preferences_verification::{
         ProposerPreferencesError, proposer_preference_cache::GossipVerifiedProposerPreferenceCache,
     },
@@ -9,20 +9,17 @@ use crate::{
 use eth2::types::{EventKind, ForkVersionedResponse};
 use slot_clock::SlotClock;
 use state_processing::signature_sets::{get_pubkey_from_state, proposer_preferences_signature_set};
+use state_processing::state_advance::partial_state_advance;
 use tracing::debug;
-use types::{
-    BeaconState, ChainSpec, EthSpec, ProposerPreferences, SignedProposerPreferences, Slot,
-};
+use types::{ChainSpec, EthSpec, ProposerPreferences, SignedProposerPreferences, Slot};
 
 /// Verify that proposer preferences are consistent with the current chain state
 pub(crate) fn verify_preferences_consistency<E: EthSpec>(
     preferences: &ProposerPreferences,
     current_slot: Slot,
-    head_state: &BeaconState<E>,
     spec: &ChainSpec,
 ) -> Result<(), ProposerPreferencesError> {
     let proposal_slot = preferences.proposal_slot;
-    let validator_index = preferences.validator_index;
     let current_epoch = current_slot.epoch(E::slots_per_epoch());
     let proposal_epoch = proposal_slot.epoch(E::slots_per_epoch());
 
@@ -39,13 +36,6 @@ pub(crate) fn verify_preferences_consistency<E: EthSpec>(
         });
     }
 
-    if !head_state.is_valid_proposal_slot(preferences, spec)? {
-        return Err(ProposerPreferencesError::InvalidProposalSlot {
-            validator_index,
-            proposal_slot,
-        });
-    }
-
     Ok(())
 }
 
@@ -54,6 +44,7 @@ pub struct GossipVerificationContext<'a, T: BeaconChainTypes> {
     pub gossip_verified_proposer_preferences_cache: &'a GossipVerifiedProposerPreferenceCache,
     pub slot_clock: &'a T::SlotClock,
     pub spec: &'a ChainSpec,
+    pub store: &'a BeaconStore<T>,
 }
 
 /// A wrapper around `SignedProposerPreferences` that has been verified for gossip propagation.
@@ -75,7 +66,6 @@ impl GossipVerifiedProposerPreferences {
             .slot_clock
             .now()
             .ok_or(ProposerPreferencesError::UnableToReadSlot)?;
-        let head_state = &cached_head.snapshot.beacon_state;
 
         if ctx
             .gossip_verified_proposer_preferences_cache
@@ -87,17 +77,51 @@ impl GossipVerifiedProposerPreferences {
             });
         }
 
-        verify_preferences_consistency(
+        verify_preferences_consistency::<T::EthSpec>(
             &signed_preferences.message,
             current_slot,
-            head_state,
             ctx.spec,
         )?;
 
+        // Get the block at dependent_root from fork choice to verify canonicity and get state_root
+        let fork_choice = ctx.canonical_head.fork_choice_read_lock();
+        let dependent_block = fork_choice
+            .get_block(&dependent_root)
+            .ok_or(ProposerPreferencesError::DependentRootUnknown { dependent_root })?;
+        let head_root = cached_head.head_block_root();
+        if !fork_choice.is_descendant(dependent_root, head_root) {
+            return Err(ProposerPreferencesError::DependentRootNotCanonical { dependent_root });
+        }
+        let dependent_state_root = dependent_block.state_root;
+        drop(fork_choice);
+
+        // We need a state at `target_epoch` so we have the correct proposer lookahead.
+        let proposal_epoch = proposal_slot.epoch(T::EthSpec::slots_per_epoch());
+        let target_epoch = proposal_epoch.saturating_sub(ctx.spec.min_seed_lookahead);
+        let target_slot = target_epoch.start_slot(T::EthSpec::slots_per_epoch());
+
+        let (state_root, mut state) = ctx
+            .store
+            .get_advanced_hot_state(dependent_root, target_slot, dependent_state_root)
+            .map_err(crate::BeaconChainError::DBError)?
+            .ok_or(ProposerPreferencesError::DependentRootUnknown { dependent_root })?;
+
+        if state.current_epoch() < target_epoch {
+            partial_state_advance(&mut state, Some(state_root), target_slot, ctx.spec)
+                .map_err(crate::BeaconChainError::StateAdvanceError)?;
+        }
+
+        if !state.is_valid_proposal_slot(&signed_preferences.message, ctx.spec)? {
+            return Err(ProposerPreferencesError::InvalidProposalSlot {
+                validator_index,
+                proposal_slot,
+            });
+        }
+
         // Verify signature
         proposer_preferences_signature_set(
-            head_state,
-            |i| get_pubkey_from_state(head_state, i),
+            &state,
+            |i| get_pubkey_from_state(&state, i),
             &signed_preferences,
             ctx.spec,
         )
@@ -128,6 +152,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
                 .gossip_verified_proposer_preferences_cache,
             slot_clock: &self.slot_clock,
             spec: &self.spec,
+            store: &self.store,
         }
     }
 
@@ -176,10 +201,7 @@ impl<T: BeaconChainTypes> BeaconChain<T> {
 
 #[cfg(test)]
 mod tests {
-    use types::{
-        Address, BeaconState, ChainSpec, EthSpec, Hash256, MinimalEthSpec, ProposerPreferences,
-        Slot,
-    };
+    use types::{Address, ChainSpec, EthSpec, Hash256, MinimalEthSpec, ProposerPreferences, Slot};
 
     use super::verify_preferences_consistency;
     use crate::proposer_preferences_verification::ProposerPreferencesError;
@@ -197,11 +219,6 @@ mod tests {
         }
     }
 
-    fn state() -> BeaconState<E> {
-        let spec = spec();
-        BeaconState::new(0, <_>::default(), &spec)
-    }
-
     fn spec() -> ChainSpec {
         test_spec::<E>()
     }
@@ -214,7 +231,7 @@ mod tests {
         let current_slot = Slot::new(2 * E::slots_per_epoch());
         let prefs = make_preferences(Slot::new(3), 0);
 
-        let result = verify_preferences_consistency::<E>(&prefs, current_slot, &state(), &spec());
+        let result = verify_preferences_consistency::<E>(&prefs, current_slot, &spec());
         assert!(matches!(
             result,
             Err(ProposerPreferencesError::InvalidProposalEpoch { .. })
@@ -229,7 +246,7 @@ mod tests {
         let current_slot = Slot::new(E::slots_per_epoch());
         let prefs = make_preferences(Slot::new(3 * E::slots_per_epoch() + 1), 0);
 
-        let result = verify_preferences_consistency::<E>(&prefs, current_slot, &state(), &spec());
+        let result = verify_preferences_consistency::<E>(&prefs, current_slot, &spec());
         assert!(matches!(
             result,
             Err(ProposerPreferencesError::InvalidProposalEpoch { .. })
@@ -244,7 +261,7 @@ mod tests {
         let current_slot = Slot::new(10);
         let prefs = make_preferences(Slot::new(9), 0);
 
-        let result = verify_preferences_consistency::<E>(&prefs, current_slot, &state(), &spec());
+        let result = verify_preferences_consistency::<E>(&prefs, current_slot, &spec());
         assert!(matches!(
             result,
             Err(ProposerPreferencesError::ProposalSlotAlreadyPassed { .. })
@@ -259,7 +276,7 @@ mod tests {
         let current_slot = Slot::new(10);
         let prefs = make_preferences(Slot::new(10), 0);
 
-        let result = verify_preferences_consistency::<E>(&prefs, current_slot, &state(), &spec());
+        let result = verify_preferences_consistency::<E>(&prefs, current_slot, &spec());
         assert!(matches!(
             result,
             Err(ProposerPreferencesError::ProposalSlotAlreadyPassed { .. })
