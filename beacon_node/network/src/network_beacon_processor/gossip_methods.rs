@@ -4081,8 +4081,7 @@ impl<T: BeaconChainTypes> NetworkBeaconProcessor<T> {
                 | ProposerPreferencesError::BeaconChainError(_)
                 | ProposerPreferencesError::BeaconStateError(_)
                 | ProposerPreferencesError::UnableToReadSlot
-                | ProposerPreferencesError::DependentRootUnknown { .. }
-                | ProposerPreferencesError::DependentRootNotCanonical { .. },
+                | ProposerPreferencesError::DependentRootUnknown { .. },
             ) => {
                 self.propagate_validation_result(message_id, peer_id, MessageAcceptance::Ignore);
             }
