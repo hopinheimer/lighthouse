@@ -2419,6 +2419,149 @@ async fn range_sync_block_new_gloas_rejects_block_hash_mismatch() {
     );
 }
 
+/// Produces a Gloas block + envelope on top of the current head and imports the block (but not its
+/// envelope), so the block is known to fork choice with its payload not yet received.
+async fn import_gloas_block_without_envelope(
+    harness: &BeaconChainHarness<EphemeralHarnessType<E>>,
+) -> (
+    Arc<SignedBeaconBlock<E>>,
+    SignedExecutionPayloadEnvelope<E>,
+    Hash256,
+) {
+    harness.advance_slot();
+
+    let state = harness.get_current_state();
+    let slot = harness.get_current_slot();
+    let (block_contents, envelope, _) = harness.make_block_with_envelope(state, slot).await;
+    let block = block_contents.0.clone();
+    let block_root = block.canonical_root();
+    let envelope = envelope.expect("gloas block should have envelope");
+
+    harness
+        .process_block(slot, block_root, block_contents)
+        .await
+        .expect("block should import");
+
+    (block, envelope, block_root)
+}
+
+/// Retrying a range-sync batch can provide the envelope for a block that was previously imported
+/// without one. The duplicate block should be allowed through far enough to import the envelope.
+#[tokio::test]
+async fn process_chain_segment_imports_missing_envelope_for_duplicate_gloas_block() {
+    let spec = test_spec::<E>();
+    if !spec.fork_name_at_slot::<E>(Slot::new(1)).gloas_enabled() {
+        return;
+    }
+
+    let harness = BeaconChainHarness::builder(MainnetEthSpec)
+        .spec(spec.into())
+        .keypairs(KEYPAIRS[0..VALIDATOR_COUNT].to_vec())
+        .node_custody_type(NodeCustodyType::Supernode)
+        .fresh_ephemeral_store()
+        .mock_execution_layer()
+        .build();
+
+    let (block, envelope, block_root) = import_gloas_block_without_envelope(&harness).await;
+    let block_slot = block.slot();
+
+    assert!(
+        !harness
+            .chain
+            .canonical_head
+            .fork_choice_read_lock()
+            .is_payload_received(&block_root),
+        "payload should start missing"
+    );
+    assert!(
+        harness
+            .chain
+            .store
+            .get_payload_envelope(&block_root)
+            .expect("should read envelope from store")
+            .is_none(),
+        "envelope should start missing from the store"
+    );
+
+    let available_envelope = AvailableEnvelope::new(Arc::new(envelope), vec![]);
+    let segment = vec![RangeSyncBlock::new_gloas(block, Some(available_envelope)).unwrap()];
+
+    let result = harness
+        .chain
+        .process_chain_segment(segment, NotifyExecutionLayer::Yes)
+        .await;
+
+    let ChainSegmentResult::Successful { imported_blocks } = result else {
+        panic!("range sync should succeed");
+    };
+
+    assert_eq!(
+        imported_blocks,
+        vec![(block_root, block_slot)],
+        "the duplicate block should be reported as processed"
+    );
+    assert!(
+        harness
+            .chain
+            .canonical_head
+            .fork_choice_read_lock()
+            .is_payload_received(&block_root),
+        "range sync should mark the payload as received"
+    );
+    assert!(
+        harness
+            .chain
+            .store
+            .get_payload_envelope(&block_root)
+            .expect("should read envelope from store")
+            .is_some(),
+        "range sync should persist the envelope"
+    );
+}
+
+/// Once the payload has been received, retrying the same block and envelope is a no-op.
+#[tokio::test]
+async fn process_chain_segment_ignores_duplicate_gloas_block_when_payload_received() {
+    let spec = test_spec::<E>();
+    if !spec.fork_name_at_slot::<E>(Slot::new(1)).gloas_enabled() {
+        return;
+    }
+
+    let harness = BeaconChainHarness::builder(MainnetEthSpec)
+        .spec(spec.into())
+        .keypairs(KEYPAIRS[0..VALIDATOR_COUNT].to_vec())
+        .node_custody_type(NodeCustodyType::Supernode)
+        .fresh_ephemeral_store()
+        .mock_execution_layer()
+        .build();
+
+    let (block, envelope, block_root) = import_gloas_block_without_envelope(&harness).await;
+
+    harness
+        .chain
+        .canonical_head
+        .fork_choice_write_lock()
+        .on_valid_payload_envelope_received(block_root)
+        .expect("payload should be marked received");
+
+    let available_envelope = AvailableEnvelope::new(Arc::new(envelope), vec![]);
+    let segment = vec![RangeSyncBlock::new_gloas(block, Some(available_envelope)).unwrap()];
+
+    let result = harness
+        .chain
+        .process_chain_segment(segment, NotifyExecutionLayer::Yes)
+        .await;
+
+    let ChainSegmentResult::Successful { imported_blocks } = result else {
+        panic!("range sync should succeed");
+    };
+
+    assert!(
+        imported_blocks.is_empty(),
+        "block whose payload was already received should be ignored as a duplicate"
+    );
+}
+
 // Test that RpcBlock::new() rejects blocks when blob count doesn't match expected.
 #[tokio::test]
 async fn range_sync_block_construction_fails_with_wrong_blob_count() {
