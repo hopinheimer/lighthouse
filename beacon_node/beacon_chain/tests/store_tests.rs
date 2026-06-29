@@ -3329,7 +3329,12 @@ async fn weak_subjectivity_sync_test(
         // Importing the invalid batch should error.
         assert!(matches!(
             beacon_chain
-                .import_historical_block_batch(batch_with_invalid_first_block)
+                .import_historical_block_batch(
+                    batch_with_invalid_first_block
+                        .into_iter()
+                        .map(|block| (block, None))
+                        .collect(),
+                )
                 .unwrap_err(),
             HistoricalBlockError::InvalidSignature
         ));
@@ -3349,7 +3354,10 @@ async fn weak_subjectivity_sync_test(
             );
 
             // Importing the batch with valid signatures should succeed.
-            let available_blocks_batch1 = batch.iter().map(clone_block).collect::<Vec<_>>();
+            let available_blocks_batch1 = batch
+                .iter()
+                .map(|block| (clone_block(block), None))
+                .collect::<Vec<_>>();
             beacon_chain
                 .import_historical_block_batch(available_blocks_batch1)
                 .unwrap();
@@ -3377,7 +3385,10 @@ async fn weak_subjectivity_sync_test(
             );
 
             // Resupplying the blocks should not fail, they can be safely ignored.
-            let available_blocks_batch2 = batch.iter().map(clone_block).collect::<Vec<_>>();
+            let available_blocks_batch2 = batch
+                .iter()
+                .map(|block| (clone_block(block), None))
+                .collect::<Vec<_>>();
             beacon_chain
                 .import_historical_block_batch(available_blocks_batch2)
                 .unwrap();
