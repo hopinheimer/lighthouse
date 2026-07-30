@@ -39,7 +39,7 @@ use crate::metrics::{
 };
 use crate::observed_data_sidecars::ObservationStrategy;
 use pending_components::{PendingComponents, ReconstructColumnsDecision};
-use types::SignedExecutionPayloadBid;
+use types::{SignedExecutionPayloadBid, SignedExecutionPayloadEnvelope};
 
 /// The LRU Cache stores `PendingComponents`, which store the block root, the execution payload bid, and its associated column data.
 /// The execution payload bid stores the kzg commitments which we use to verify against incoming column data.
@@ -143,6 +143,22 @@ impl<T: BeaconChainTypes> PendingPayloadCache<T> {
         })
     }
 
+    /// Return the executed payload envelope cached for `block_root` awaiting data availability,
+    /// if present.
+    pub fn get_executed_payload_envelope(
+        &self,
+        block_root: &Hash256,
+    ) -> Option<Arc<SignedExecutionPayloadEnvelope<T::EthSpec>>> {
+        self.peek_pending_components(block_root, |components| {
+            components.and_then(|components| {
+                components
+                    .envelope
+                    .as_ref()
+                    .map(|envelope| envelope.envelope.clone())
+            })
+        })
+    }
+
     /// Filter out cells that are already cached for the given column sidecar.
     /// Returns the cells that still need KZG verification, or `None` if all cells are cached.
     #[instrument(skip_all, level = "trace")]
@@ -217,7 +233,7 @@ impl<T: BeaconChainTypes> PendingPayloadCache<T> {
             .ok_or(AvailabilityCheckError::MissingBid(block_root))?;
         let kzg_verified_columns = KzgVerifiedDataColumn::from_batch_with_scoring_and_commitments(
             custody_columns,
-            bid.message.blob_kzg_commitments.as_ref(),
+            &bid.message.blob_kzg_commitments,
             &self.kzg,
         )
         .map_err(AvailabilityCheckError::InvalidColumn)?;
@@ -308,7 +324,7 @@ impl<T: BeaconChainTypes> PendingPayloadCache<T> {
         let all_data_columns = KzgVerifiedCustodyDataColumn::reconstruct_columns(
             &self.kzg,
             verified_data_columns,
-            bid.message.blob_kzg_commitments.as_ref(),
+            &bid.message.blob_kzg_commitments,
             &self.spec,
         )
         .map_err(|e| {

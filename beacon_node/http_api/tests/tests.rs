@@ -886,9 +886,7 @@ impl ApiTester {
             for validator_indices in self.interesting_validator_indices() {
                 let state_opt = state_id.state(&self.chain).ok();
                 let validators: Vec<Validator> = match state_opt.as_ref() {
-                    Some((state, _execution_optimistic, _finalized)) => {
-                        state.validators().clone().to_vec()
-                    }
+                    Some((state, _execution_optimistic, _finalized)) => state.validators().to_vec(),
                     None => vec![],
                 };
                 let validator_index_ids = validator_indices
@@ -983,9 +981,7 @@ impl ApiTester {
             for validator_indices in self.interesting_validator_indices() {
                 let state_opt = state_id.state(&self.chain).ok();
                 let validators: Vec<Validator> = match state_opt.as_ref() {
-                    Some((state, _execution_optimistic, _finalized)) => {
-                        state.validators().clone().to_vec()
-                    }
+                    Some((state, _execution_optimistic, _finalized)) => state.validators().to_vec(),
                     None => vec![],
                 };
 
@@ -2423,13 +2419,8 @@ impl ApiTester {
 
         let expected = self
             .chain
-            .light_client_server_cache
-            .get_light_client_updates(
-                &self.chain.store,
-                current_sync_committee_period,
-                1,
-                &self.chain.spec,
-            )
+            .store
+            .get_light_client_updates(current_sync_committee_period, 1)
             .unwrap();
 
         assert_eq!(1, expected.len());
@@ -2637,6 +2628,9 @@ impl ApiTester {
             AttesterSlashing::Electra(slashing) => {
                 slashing.attestation_1.data.slot += 1;
             }
+            AttesterSlashing::Gloas(slashing) => {
+                slashing.attestation_1.data.slot += 1;
+            }
         }
 
         self.client
@@ -2659,6 +2653,9 @@ impl ApiTester {
                 slashing.attestation_1.data.slot += 1;
             }
             AttesterSlashing::Electra(slashing) => {
+                slashing.attestation_1.data.slot += 1;
+            }
+            AttesterSlashing::Gloas(slashing) => {
                 slashing.attestation_1.data.slot += 1;
             }
         }
@@ -3083,6 +3080,7 @@ impl ApiTester {
             execution_payment: 0,
             blob_kzg_commitments: Default::default(),
             execution_requests_root: Hash256::zero(),
+            _phantom: std::marker::PhantomData,
         };
 
         let signed = SignedExecutionPayloadBid {
@@ -3141,7 +3139,12 @@ impl ApiTester {
     }
 
     pub async fn test_get_config_spec(self) -> Self {
-        let result = if self.chain.spec.is_gloas_scheduled() {
+        let result = if self.chain.spec.is_heze_scheduled() {
+            self.client
+                .get_config_spec::<ConfigAndPresetHeze>()
+                .await
+                .map(|res| ConfigAndPreset::Heze(res.data))
+        } else if self.chain.spec.is_gloas_scheduled() {
             self.client
                 .get_config_spec::<ConfigAndPresetGloas>()
                 .await
@@ -5459,6 +5462,9 @@ impl ApiTester {
             SignedAggregateAndProof::Electra(aggregate) => {
                 aggregate.message.aggregate.data.slot += 1;
             }
+            SignedAggregateAndProof::Gloas(aggregate) => {
+                aggregate.message.aggregate.data.slot += 1;
+            }
         }
 
         self.client
@@ -5494,6 +5500,9 @@ impl ApiTester {
                 aggregate.message.aggregate.data.slot += 1;
             }
             SignedAggregateAndProof::Electra(aggregate) => {
+                aggregate.message.aggregate.data.slot += 1;
+            }
+            SignedAggregateAndProof::Gloas(aggregate) => {
                 aggregate.message.aggregate.data.slot += 1;
             }
         }
@@ -7585,7 +7594,7 @@ impl ApiTester {
     pub async fn test_get_events(self) -> Self {
         // Subscribe to all events
         let topics = vec![
-            EventTopic::Attestation,
+            EventTopic::SingleAttestation,
             EventTopic::VoluntaryExit,
             EventTopic::Block,
             EventTopic::BlockGossip,
@@ -7643,7 +7652,7 @@ impl ApiTester {
             .fork_name_at_slot::<E>(attestations.first().unwrap().data.slot);
 
         self.client
-            .post_beacon_pool_attestations_v2::<E>(attestations, fork_name)
+            .post_beacon_pool_attestations_v2::<E>(attestations.clone(), fork_name)
             .await
             .unwrap();
 
@@ -7655,10 +7664,11 @@ impl ApiTester {
         .await;
         assert_eq!(
             attestation_events.as_slice(),
-            self.attestations
-                .clone()
+            attestations
                 .into_iter()
-                .map(|attestation| EventKind::Attestation(Box::new(attestation)))
+                .map(|single_attestation| EventKind::SingleAttestation(Box::new(
+                    single_attestation
+                )))
                 .collect::<Vec<_>>()
                 .as_slice()
         );
