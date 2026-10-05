@@ -8491,6 +8491,55 @@ impl ApiTester {
         self
     }
 
+    /// Post-Fulu, a failed `submitBlindedBlockV2` must not fall back to v1: a v1 response carries
+    /// blobs and cell proofs from the builder that are not KZG verified.
+    pub async fn test_no_v1_fallback_for_fulu_blinded_block(self) -> Self {
+        let mock_builder = self.mock_builder.as_ref().unwrap();
+        // Ensure builder payload is chosen
+        mock_builder.add_operation(Operation::Value(Uint256::from(
+            DEFAULT_MOCK_EL_PAYLOAD_VALUE_WEI + 1,
+        )));
+        mock_builder.reject_blinded_blocks_v2();
+
+        let slot = self.chain.slot().unwrap();
+        let epoch = self.chain.epoch().unwrap();
+        let fork = self.chain.canonical_head.cached_head().head_fork();
+        let genesis_validators_root = self.chain.genesis_validators_root;
+        let (proposer_index, randao_reveal) = self.get_test_randao(slot, epoch).await;
+        let sk = self.validator_keypairs()[proposer_index as usize]
+            .sk
+            .clone();
+
+        let (payload_type, _) = self
+            .client
+            .get_validator_blocks_v3::<E>(slot, &randao_reveal, None, None, None)
+            .await
+            .unwrap();
+        let blinded_block = match payload_type.data {
+            ProduceBlockV3Response::Blinded(blinded_block) => blinded_block,
+            ProduceBlockV3Response::Full(_) => panic!("Expecting a blinded payload"),
+        };
+        assert!(
+            blinded_block
+                .to_ref()
+                .fork_name(&self.chain.spec)
+                .unwrap()
+                .fulu_enabled()
+        );
+        let signed_blinded_block =
+            blinded_block.sign(&sk, &fork, genesis_validators_root, &self.chain.spec);
+        let head_root_before = self.chain.head_beacon_block_root();
+
+        self.client
+            .post_beacon_blinded_blocks(&signed_blinded_block)
+            .await
+            .unwrap_err();
+
+        assert_eq!(mock_builder.blinded_blocks_v1_requests(), 0);
+        assert_eq!(self.chain.head_beacon_block_root(), head_root_before);
+        self
+    }
+
     pub async fn test_lighthouse_rejects_invalid_withdrawals_root(self) -> Self {
         // Ensure builder payload *would be* chosen
         self.mock_builder
@@ -10980,6 +11029,19 @@ async fn builder_works_post_deneb() {
         .test_builder_works_post_deneb()
         .await
         .test_lighthouse_rejects_invalid_withdrawals_root_v3()
+        .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn no_v1_fallback_for_fulu_blinded_block() {
+    let spec = test_spec::<E>();
+    // Only applies to Fulu blocks: pre-Fulu still falls back, Gloas has no blinded blocks.
+    if spec.fork_name_at_epoch(Epoch::new(0)) != ForkName::Fulu {
+        return;
+    }
+    ApiTester::new_mev_tester()
+        .await
+        .test_no_v1_fallback_for_fulu_blinded_block()
         .await;
 }
 

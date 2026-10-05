@@ -22,6 +22,7 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use task_executor::TaskExecutor;
 use tempfile::NamedTempFile;
@@ -319,6 +320,10 @@ pub struct MockBuilder<E: EthSpec> {
     broadcast_to_bn: bool,
     /// A cache that stores the proposers index for a given epoch
     proposers_cache: Arc<RwLock<HashMap<Epoch, Vec<ProposerData>>>>,
+    /// Reject `submitBlindedBlockV2` requests, simulating a relay without v2 support.
+    reject_blinded_blocks_v2: Arc<AtomicBool>,
+    /// The number of `submitBlindedBlockV1` requests received.
+    blinded_blocks_v1_requests: Arc<AtomicUsize>,
 }
 
 impl<E: EthSpec> MockBuilder<E> {
@@ -401,7 +406,28 @@ impl<E: EthSpec> MockBuilder<E> {
             max_bid,
             broadcast_to_bn,
             genesis_time: None,
+            reject_blinded_blocks_v2: Arc::new(AtomicBool::new(false)),
+            blinded_blocks_v1_requests: Arc::new(AtomicUsize::new(0)),
         }
+    }
+
+    pub fn reject_blinded_blocks_v2(&self) {
+        self.reject_blinded_blocks_v2.store(true, Ordering::Relaxed);
+    }
+
+    pub fn blinded_blocks_v1_requests(&self) -> usize {
+        self.blinded_blocks_v1_requests.load(Ordering::Relaxed)
+    }
+
+    /// Record a blinded block submission, rejecting it if it should not be served.
+    fn on_blinded_block_request(&self, endpoint_version: EndpointVersion) -> Result<(), String> {
+        if endpoint_version == EndpointVersion(1) {
+            self.blinded_blocks_v1_requests
+                .fetch_add(1, Ordering::Relaxed);
+        } else if self.reject_blinded_blocks_v2.load(Ordering::Relaxed) {
+            return Err("submitBlindedBlockV2 is not supported".to_string());
+        }
+        Ok(())
     }
 
     pub fn add_operation(&self, op: Operation) {
@@ -1075,6 +1101,9 @@ pub fn serve<E: EthSpec>(
                             "Unsupported version: {endpoint_version}"
                         ))));
                     }
+                    builder
+                        .on_blinded_block_request(endpoint_version)
+                        .map_err(|e| warp::reject::custom(Custom(e)))?;
                     let block = SignedBlindedBeaconBlock::<E>::from_ssz_bytes_by_fork(
                         &block_bytes,
                         fork_name,
@@ -1120,6 +1149,9 @@ pub fn serve<E: EthSpec>(
                         "Unsupported version: {endpoint_version}"
                     ))));
                 }
+                builder
+                    .on_blinded_block_request(endpoint_version)
+                    .map_err(|e| warp::reject::custom(Custom(e)))?;
                 let payload = builder
                     .submit_blinded_block(block)
                     .await

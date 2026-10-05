@@ -1845,9 +1845,13 @@ impl<E: EthSpec> ExecutionLayer<E> {
                 .post_builder_blinded_blocks_v2(block_root, block)
                 .await
                 .map(|()| SubmitBlindedBlockResponse::V2);
-            // Fallback to v1 if v2 fails because the relay doesn't support it.
-            // Note: we should remove the fallback post fulu when all relays have support for v2.
-            if resp.is_err() {
+            // Fallback to v1 if v2 fails because the relay doesn't support it, but only for
+            // pre-Fulu blocks. A v1 response for a Fulu block carries blobs and cell proofs from
+            // the builder that would be published and imported without KZG verification.
+            //
+            // Use the fork at the block's slot rather than the block variant, as a block decoded
+            // from JSON without a fork hint may be an earlier variant with an identical schema.
+            if resp.is_err() && !spec.fork_name_at_slot::<E>(block.slot()).fulu_enabled() {
                 self.post_builder_blinded_blocks_v1(block_root, block)
                     .await
                     .map(|full_payload| SubmitBlindedBlockResponse::V1(Box::new(full_payload)))
