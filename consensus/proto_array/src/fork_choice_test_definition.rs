@@ -1,11 +1,14 @@
 mod execution_status;
 mod ffg_updates;
+mod gloas_optimistic_sync;
 mod gloas_payload;
 mod no_votes;
 mod votes;
 
 use crate::error::Error;
-use crate::proto_array_fork_choice::{Block, ExecutionStatus, PayloadStatus, ProtoArrayForkChoice};
+use crate::proto_array_fork_choice::{
+    Block, ExecutionStatus, ExecutionVerdict, PayloadStatus, ProtoArrayForkChoice,
+};
 use crate::{InvalidationOperation, JustifiedBalances, ParentPayloadStatus};
 use fixed_bytes::FixedBytesExtended;
 use serde::{Deserialize, Serialize};
@@ -19,6 +22,7 @@ use types::{
 
 pub use execution_status::*;
 pub use ffg_updates::*;
+pub use gloas_optimistic_sync::*;
 pub use gloas_payload::*;
 pub use no_votes::*;
 pub use votes::*;
@@ -110,6 +114,44 @@ pub enum Operation {
     ProcessExecutionPayloadEnvelope {
         block_root: Hash256,
     },
+    /// Simulate receiving an execution payload for `block_root` that the EL has not yet verified
+    /// (`SYNCING`/`ACCEPTED`). Sets `payload_received = true` without validating any ancestors.
+    ProcessOptimisticExecutionPayloadEnvelope {
+        block_root: Hash256,
+    },
+    /// Simulate a VALID envelope verdict that fork choice must refuse, e.g. because an ancestor
+    /// payload is already invalid. Asserts that `on_payload_envelope_received` errors.
+    ProcessExecutionPayloadEnvelopeExpectError {
+        block_root: Hash256,
+    },
+    /// Overwrite a node's execution status directly, bypassing propagation. Used to reach states
+    /// that fork choice only enters after an execution layer contradicts itself.
+    InjectExecutionStatus {
+        block_root: Hash256,
+        status: ExecutionStatus,
+    },
+    /// Reset every payload verdict to optimistic, as on a restart after an invalidation.
+    ResetToOptimistic,
+    /// Replace fork choice with a copy decoded from its persisted bytes, as on a restart.
+    Reload,
+    /// Replace the set of slashed validators whose votes fork choice discards.
+    SetEquivocatingIndices {
+        indices: Vec<u64>,
+    },
+    AssertExecutionStatus {
+        block_root: Hash256,
+        expected: ExecutionStatus,
+    },
+    /// Assert the verdict of the payload a block's branch actually executed, i.e. the verdict of
+    /// its `EMPTY` node.
+    AssertInheritedExecutionStatus {
+        block_root: Hash256,
+        expected: ExpectedVerdict,
+    },
+    AssertEquivocatingScore {
+        block_root: Hash256,
+        expected: u64,
+    },
     AssertPayloadReceived {
         block_root: Hash256,
         expected: bool,
@@ -133,6 +175,24 @@ pub enum Operation {
         proposal_slot: Slot,
         expected: bool,
     },
+}
+
+/// A serializable mirror of `ExecutionVerdict`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum ExpectedVerdict {
+    Valid,
+    Invalid,
+    Optimistic,
+}
+
+impl From<ExpectedVerdict> for ExecutionVerdict {
+    fn from(verdict: ExpectedVerdict) -> Self {
+        match verdict {
+            ExpectedVerdict::Valid => ExecutionVerdict::Valid,
+            ExpectedVerdict::Invalid => ExecutionVerdict::Invalid,
+            ExpectedVerdict::Optimistic => ExecutionVerdict::Optimistic,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -176,7 +236,7 @@ impl ForkChoiceTestDefinition {
             &spec,
         )
         .expect("should create fork choice struct");
-        let equivocating_indices = BTreeSet::new();
+        let mut equivocating_indices = BTreeSet::new();
         let mut last_current_slot = Slot::new(0);
 
         for (op_index, op) in self.operations.into_iter().enumerate() {
@@ -588,6 +648,177 @@ impl ForkChoiceTestDefinition {
                             )
                         });
                     check_bytes_round_trip(&fork_choice);
+                }
+                Operation::ProcessOptimisticExecutionPayloadEnvelope { block_root } => {
+                    // The envelope carries the payload the block's bid committed to.
+                    let block_hash = fork_choice
+                        .get_block(&block_root)
+                        .and_then(|block| block.execution_payload_block_hash)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "ProcessOptimisticExecutionPayloadEnvelope: no bid block hash at \
+                                 op index {}",
+                                op_index
+                            )
+                        });
+                    fork_choice
+                        .on_payload_envelope_received(
+                            block_root,
+                            ExecutionStatus::Optimistic(block_hash),
+                        )
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "on_execution_payload op at index {} returned error: {}",
+                                op_index, e
+                            )
+                        });
+                    check_bytes_round_trip(&fork_choice);
+                }
+                Operation::ProcessExecutionPayloadEnvelopeExpectError { block_root } => {
+                    let block_hash = fork_choice
+                        .get_block(&block_root)
+                        .and_then(|block| block.execution_payload_block_hash)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "ProcessExecutionPayloadEnvelopeExpectError: no bid block hash \
+                                 at op index {}",
+                                op_index
+                            )
+                        });
+                    let result = fork_choice.on_payload_envelope_received(
+                        block_root,
+                        ExecutionStatus::Valid(block_hash),
+                    );
+                    assert!(
+                        result.is_err(),
+                        "on_payload_envelope_received should fail at op index {}",
+                        op_index
+                    );
+                    check_bytes_round_trip(&fork_choice);
+                }
+                Operation::InjectExecutionStatus { block_root, status } => {
+                    let block_index = *fork_choice
+                        .proto_array
+                        .indices
+                        .get(&block_root)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "InjectExecutionStatus: block root not found at op index {}",
+                                op_index
+                            )
+                        });
+                    let node = fork_choice
+                        .proto_array
+                        .nodes
+                        .get_mut(block_index)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "InjectExecutionStatus: node not found at op index {}",
+                                op_index
+                            )
+                        });
+                    *node.execution_status_mut() = status;
+                }
+                Operation::Reload => {
+                    fork_choice = ProtoArrayForkChoice::from_bytes(
+                        &fork_choice.as_bytes(),
+                        fork_choice.balances.clone(),
+                    )
+                    .unwrap_or_else(|e| {
+                        panic!("reload op at index {} returned error: {}", op_index, e)
+                    });
+                }
+                Operation::SetEquivocatingIndices { indices } => {
+                    equivocating_indices = indices.into_iter().collect();
+                }
+                Operation::ResetToOptimistic => {
+                    fork_choice
+                        .set_all_blocks_to_optimistic::<MainnetEthSpec>(&equivocating_indices)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "set_all_blocks_to_optimistic op at index {} returned error: {}",
+                                op_index, e
+                            )
+                        });
+                    check_bytes_round_trip(&fork_choice);
+                }
+                Operation::AssertInheritedExecutionStatus {
+                    block_root,
+                    expected,
+                } => {
+                    let actual = fork_choice
+                        .proto_array
+                        .inherited_execution_status(block_root)
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "inherited_execution_status op at index {} returned error: {:?}",
+                                op_index, e
+                            )
+                        });
+                    assert_eq!(
+                        actual,
+                        ExecutionVerdict::from(expected),
+                        "inherited execution verdict mismatch at op index {}",
+                        op_index
+                    );
+                }
+                Operation::AssertExecutionStatus {
+                    block_root,
+                    expected,
+                } => {
+                    let block_index = fork_choice
+                        .proto_array
+                        .indices
+                        .get(&block_root)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "AssertExecutionStatus: block root not found at op index {}",
+                                op_index
+                            )
+                        });
+                    let node = fork_choice
+                        .proto_array
+                        .nodes
+                        .get(*block_index)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "AssertExecutionStatus: node not found at op index {}",
+                                op_index
+                            )
+                        });
+                    assert_eq!(
+                        node.execution_status(),
+                        expected,
+                        "execution_status mismatch at op index {}",
+                        op_index
+                    );
+                }
+                Operation::AssertEquivocatingScore {
+                    block_root,
+                    expected,
+                } => {
+                    let node = fork_choice
+                        .proto_array
+                        .indices
+                        .get(&block_root)
+                        .and_then(|index| fork_choice.proto_array.nodes.get(*index))
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "AssertEquivocatingScore: block root not found at op index {}",
+                                op_index
+                            )
+                        });
+                    let v29 = node.as_v29().unwrap_or_else(|_| {
+                        panic!(
+                            "AssertEquivocatingScore: node is not V29 at op index {}",
+                            op_index
+                        )
+                    });
+                    assert_eq!(
+                        v29.equivocating_attestation_score, expected,
+                        "equivocating_attestation_score mismatch at op index {}",
+                        op_index
+                    );
                 }
                 Operation::AssertPayloadReceived {
                     block_root,

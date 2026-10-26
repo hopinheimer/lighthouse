@@ -197,6 +197,42 @@ impl InvalidPayloadRig {
         block_root
     }
 
+    /// Optimistically import the next block but withhold its envelope, so the block stays on its
+    /// `EMPTY` node and the next block builds there.
+    async fn import_block_withholding_envelope(&mut self) -> Hash256 {
+        let mock_execution_layer = self.harness.mock_execution_layer.as_ref().unwrap();
+        mock_execution_layer
+            .server
+            .all_payloads_syncing_on_new_payload(true);
+        mock_execution_layer
+            .server
+            .all_payloads_syncing_on_forkchoice_updated();
+
+        let state = self.harness.chain.head_beacon_state_cloned();
+        let slot = state.slot() + 1;
+        let ((block, blobs), _envelope, post_state) =
+            self.harness.make_block_with_envelope(state, slot).await;
+        let block_root = block.canonical_root();
+        self.harness
+            .process_block(slot, block_root, (block.clone(), blobs))
+            .await
+            .unwrap();
+
+        if self.enable_attestations {
+            let all_validators: Vec<usize> = (0..VALIDATOR_COUNT).collect();
+            self.harness.attest_block(
+                &post_state,
+                block.state_root(),
+                block_root.into(),
+                &block,
+                &all_validators,
+            );
+        }
+        self.recompute_head().await;
+
+        block_root
+    }
+
     fn block_root_at_slot(&self, slot: Slot) -> Option<Hash256> {
         self.harness
             .chain
@@ -1957,6 +1993,190 @@ async fn gloas_latest_valid_hash_keeps_its_child_on_empty() {
         cached_head.head_payload_status(),
         proto_array::PayloadStatus::Empty
     );
+}
+
+/// The parent payload hash committed to by a Gloas block's bid.
+fn bid_parent_block_hash(rig: &InvalidPayloadRig, block_root: Hash256) -> ExecutionBlockHash {
+    rig.harness
+        .chain
+        .get_blinded_block(&block_root)
+        .unwrap()
+        .unwrap()
+        .message()
+        .body()
+        .signed_execution_payload_bid()
+        .unwrap()
+        .message()
+        .parent_block_hash()
+}
+
+/// A VALID verdict for the first Gloas envelope validates the optimistic Fulu chain it builds on
+/// (https://github.com/sigp/lighthouse/pull/9934#discussion_r4120241064).
+///
+/// forkchoiceUpdated stays SYNCING throughout, so only the envelope's verdict can validate the
+/// Fulu blocks.
+#[tokio::test]
+async fn gloas_first_payload_validates_last_fulu_block() {
+    if fork_name_from_env() != Some(ForkName::Fulu) {
+        return;
+    }
+    let mut spec = test_spec::<E>();
+    spec.gloas_fork_epoch = Some(Epoch::new(1));
+    let mut rig = InvalidPayloadRig::new_with_spec(spec);
+
+    let first_gloas_slot = Slot::new(E::slots_per_epoch());
+    let fulu_roots = rig
+        .build_blocks(first_gloas_slot.as_u64() - 1, Payload::Syncing)
+        .await;
+    let last_fulu_root = *fulu_roots.last().unwrap();
+    assert_eq!(
+        rig.harness.get_block(last_fulu_root.into()).unwrap().slot(),
+        first_gloas_slot - 1
+    );
+    for &root in &fulu_roots {
+        assert!(is_optimistic(rig.execution_status(root)));
+    }
+
+    let mock = rig.harness.mock_execution_layer.as_ref().unwrap();
+    mock.server.all_payloads_valid_on_new_payload();
+    mock.server.all_payloads_syncing_on_forkchoice_updated();
+
+    let head = rig.harness.chain.head_snapshot();
+    let ((block, blobs), opt_envelope, _) = rig
+        .harness
+        .make_block_with_envelope(head.beacon_state.clone(), first_gloas_slot)
+        .await;
+    let gloas_root = block.canonical_root();
+    rig.harness
+        .process_block(first_gloas_slot, gloas_root, (block.clone(), blobs))
+        .await
+        .unwrap();
+
+    // The block alone carries no payload, so it validates nothing.
+    assert!(is_not_yet_revealed(rig.execution_status(gloas_root)));
+    assert!(is_optimistic(rig.execution_status(last_fulu_root)));
+    assert_eq!(
+        bid_parent_block_hash(&rig, gloas_root),
+        rig.block_hash(last_fulu_root)
+    );
+
+    rig.import_envelope(&block, opt_envelope)
+        .await
+        .expect("a valid envelope imports");
+
+    assert!(is_valid_and_post_bellatrix(
+        rig.execution_status(gloas_root)
+    ));
+    for root in fulu_roots {
+        assert!(
+            is_valid_and_post_bellatrix(rig.execution_status(root)),
+            "the Fulu chain beneath a valid Gloas payload is valid"
+        );
+    }
+}
+
+/// An invalid pre-Gloas ancestor beneath a Gloas justified checkpoint
+/// (https://github.com/sigp/lighthouse/issues/10152#issuecomment-5901342477).
+///
+/// A is the last Fulu block, B the first Gloas block and the justified checkpoint, C the block
+/// after B on its `FULL` or `EMPTY` node. Invalidating A's payload must reach B and C across the
+/// fork boundary, so B's own `EMPTY` node is invalid too and the justified checkpoint is lost.
+async fn gloas_invalid_fulu_ancestor_of_justified_checkpoint(c_extends_full: bool) {
+    if fork_name_from_env() != Some(ForkName::Fulu) {
+        return;
+    }
+    let gloas_fork_epoch = Epoch::new(2);
+    let mut spec = test_spec::<E>();
+    spec.gloas_fork_epoch = Some(gloas_fork_epoch);
+    let mut rig = InvalidPayloadRig::new_with_spec(spec).enable_attestations();
+
+    let first_gloas_slot = gloas_fork_epoch.start_slot(E::slots_per_epoch());
+    rig.build_blocks(first_gloas_slot.as_u64() - 1, Payload::Syncing)
+        .await;
+    let b_root = if c_extends_full {
+        rig.import_block(Payload::Syncing).await
+    } else {
+        rig.import_block_withholding_envelope().await
+    };
+    let c_root = rig.import_block(Payload::Syncing).await;
+    while rig.harness.justified_checkpoint().epoch < gloas_fork_epoch {
+        rig.import_block(Payload::Syncing).await;
+    }
+
+    let a_root = rig.block_root_at_slot(first_gloas_slot - 1).unwrap();
+    let a_parent_root = rig.block_root_at_slot(first_gloas_slot - 2).unwrap();
+    assert_eq!(rig.block_root_at_slot(first_gloas_slot), Some(b_root));
+    assert_eq!(
+        rig.harness.justified_checkpoint(),
+        Checkpoint {
+            epoch: gloas_fork_epoch,
+            root: b_root,
+        }
+    );
+    let c_parent_hash = if c_extends_full {
+        rig.block_hash(b_root)
+    } else {
+        rig.block_hash(a_root)
+    };
+    assert_eq!(bid_parent_block_hash(&rig, c_root), c_parent_hash);
+    assert!(rig.harness.shutdown_reasons().is_empty());
+    let old_head_root = rig.harness.head_block_root();
+
+    let result = rig
+        .harness
+        .chain
+        .process_invalid_execution_payload(&InvalidationOperation::InvalidateMany {
+            head_hash: rig.block_hash(a_root),
+            always_invalidate_head: true,
+            latest_valid_ancestor: rig.block_hash(a_parent_root),
+        })
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(BeaconChainError::JustifiedPayloadInvalid { .. })
+        ),
+        "{result:?}"
+    );
+    assert_eq!(
+        rig.harness.shutdown_reasons(),
+        vec![ShutdownReason::Failure(
+            INVALID_JUSTIFIED_PAYLOAD_SHUTDOWN_REASON
+        )]
+    );
+
+    assert!(is_optimistic(rig.execution_status(a_parent_root)));
+    for root in [a_root, b_root, c_root] {
+        assert!(rig.execution_status(root).is_invalid());
+    }
+    let mut fork_choice = rig.harness.chain.canonical_head.fork_choice_write_lock();
+    assert_eq!(
+        fork_choice.inherited_execution_status(&b_root).unwrap(),
+        Some(ExecutionVerdict::Invalid)
+    );
+
+    // Head selection starts at the justified block and must not pick any of its descendants. It
+    // falls back to the justified block itself, which is invalid too.
+    let current_slot = rig.harness.get_current_slot();
+    let fork_choice_head = fork_choice
+        .get_head(current_slot, &rig.harness.chain.spec)
+        .unwrap()
+        .as_pair();
+    assert_eq!(fork_choice_head, (b_root, PayloadStatus::Empty));
+    drop(fork_choice);
+
+    // The beacon chain refuses an invalid head, so the cached head stays where it was.
+    assert_eq!(rig.harness.head_block_root(), old_head_root);
+}
+
+#[tokio::test]
+async fn gloas_invalid_fulu_ancestor_of_justified_checkpoint_full() {
+    gloas_invalid_fulu_ancestor_of_justified_checkpoint(true).await;
+}
+
+#[tokio::test]
+async fn gloas_invalid_fulu_ancestor_of_justified_checkpoint_empty() {
+    gloas_invalid_fulu_ancestor_of_justified_checkpoint(false).await;
 }
 
 fn is_valid_and_post_bellatrix(status: ExecutionStatus) -> bool {
