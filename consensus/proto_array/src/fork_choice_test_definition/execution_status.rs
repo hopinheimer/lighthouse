@@ -1103,4 +1103,121 @@ mod tests {
         let test = get_execution_status_test_definition_03();
         test.run();
     }
+
+    /// The cases below run on pre-Gloas blocks, which carry their payload, and on Gloas blocks,
+    /// whose payload arrives in an envelope.
+    fn definition(gloas: bool, operations: Vec<Operation>) -> ForkChoiceTestDefinition {
+        let spec = gloas.then(|| {
+            let mut spec = MainnetEthSpec::default_spec();
+            spec.proposer_score_boost = 50;
+            spec.gloas_fork_epoch = Some(Epoch::new(0));
+            spec
+        });
+        ForkChoiceTestDefinition {
+            finalized_block_slot: Slot::new(0),
+            justified_checkpoint: get_checkpoint(0),
+            finalized_checkpoint: get_checkpoint(0),
+            operations,
+            // Gloas children of genesis that name hash 42 extend its `EMPTY` node.
+            execution_payload_parent_hash: gloas.then(|| get_hash(42)),
+            execution_payload_block_hash: gloas.then(|| get_hash(0)),
+            spec,
+        }
+    }
+
+    /// `genesis <- 1 <- 2`, each block executing its parent's payload. A Gloas block's envelope
+    /// arrives unjudged, so on both forks every payload starts `Optimistic`.
+    fn chain_of_two(gloas: bool) -> Vec<Operation> {
+        let mut operations = vec![];
+        for (root, parent_hash) in [(1, 42), (2, 1)] {
+            operations.push(Operation::ProcessBlock {
+                slot: Slot::new(root),
+                root: get_root(root),
+                parent_root: get_root(root - 1),
+                justified_checkpoint: get_checkpoint(0),
+                finalized_checkpoint: get_checkpoint(0),
+                execution_payload_parent_hash: gloas.then(|| get_hash(parent_hash)),
+                execution_payload_block_hash: gloas.then(|| get_hash(root)),
+            });
+            if gloas {
+                operations.push(Operation::ProcessUnjudgedExecutionPayloadEnvelope {
+                    block_root: get_root(root),
+                });
+            }
+        }
+        operations
+    }
+
+    fn status(root: u64, expected: fn(ExecutionBlockHash) -> ExecutionStatus) -> Operation {
+        Operation::AssertExecutionStatus {
+            block_root: get_root(root),
+            expected: expected(get_hash(root)),
+        }
+    }
+
+    /// A payload rejected on `newPayload` never reaches fork choice, so the walk starts at the
+    /// payload it builds on. That payload is condemned only when the latest valid hash lies
+    /// beneath it, and an unknown parent payload is ignored.
+    fn rejected_on_import(gloas: bool) -> ForkChoiceTestDefinition {
+        let mut operations = chain_of_two(gloas);
+        operations.extend([
+            Operation::InvalidatePayloadOnImport {
+                parent_hash: get_hash(2),
+                latest_valid_ancestor: get_hash(2),
+            },
+            status(2, ExecutionStatus::Optimistic),
+            Operation::InvalidatePayloadOnImport {
+                parent_hash: get_hash(99),
+                latest_valid_ancestor: get_hash(1),
+            },
+            status(2, ExecutionStatus::Optimistic),
+            Operation::InvalidatePayloadOnImport {
+                parent_hash: get_hash(2),
+                latest_valid_ancestor: get_hash(1),
+            },
+            status(1, ExecutionStatus::Optimistic),
+            status(2, ExecutionStatus::Invalid),
+        ]);
+        definition(gloas, operations)
+    }
+
+    /// VALID on a payload whose ancestry was condemned is a contradiction from the execution
+    /// layer: it is refused and every status stays as it was.
+    fn valid_after_invalid_ancestor(gloas: bool) -> ForkChoiceTestDefinition {
+        let mut operations = chain_of_two(gloas);
+        operations.extend([
+            Operation::InvalidatePayload {
+                head_hash: get_hash(1),
+                latest_valid_ancestor: None,
+            },
+            status(2, ExecutionStatus::Invalid),
+            Operation::ValidatePayload {
+                block_hash: get_hash(2),
+                expect_error: true,
+            },
+            status(1, ExecutionStatus::Invalid),
+            status(2, ExecutionStatus::Invalid),
+        ]);
+        definition(gloas, operations)
+    }
+
+    #[test]
+    fn rejected_on_import_pre_gloas() {
+        rejected_on_import(false).run();
+    }
+
+    #[test]
+    fn rejected_on_import_gloas() {
+        rejected_on_import(true).run();
+    }
+
+    #[test]
+    fn valid_after_invalid_ancestor_pre_gloas() {
+        valid_after_invalid_ancestor(false).run();
+    }
+
+    #[test]
+    fn valid_after_invalid_ancestor_gloas() {
+        valid_after_invalid_ancestor(true).run();
+    }
 }

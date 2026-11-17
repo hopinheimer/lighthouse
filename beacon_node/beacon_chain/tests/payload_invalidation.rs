@@ -1959,6 +1959,105 @@ async fn gloas_latest_valid_hash_keeps_its_child_on_empty() {
     );
 }
 
+/// The first Gloas block becomes justified, then the last pre-Gloas payload beneath it is found
+/// invalid. The verdict crosses the fork boundary to every Gloas block, the canonical head
+/// refuses every candidate, and the node shuts down.
+#[tokio::test]
+async fn gloas_fork_boundary_invalid_ancestor_of_justified_block() {
+    if !fork_name_from_env().is_some_and(|f| f.gloas_enabled()) {
+        return;
+    }
+    let gloas_fork_epoch = Epoch::new(2);
+    let first_gloas_slot = gloas_fork_epoch.start_slot(E::slots_per_epoch());
+    let mut spec = ForkName::Fulu.make_genesis_spec(E::default_spec());
+    spec.gloas_fork_epoch = Some(gloas_fork_epoch);
+    let mut rig = InvalidPayloadRig::new_with_spec(spec).enable_attestations();
+
+    // Every pre-Gloas payload is valid except the last, which the EL has not judged yet.
+    while rig.cached_head().head_slot() + 2 < first_gloas_slot {
+        rig.import_block(Payload::Valid).await;
+    }
+    let last_valid_root = rig.cached_head().head_block_root();
+    let pre_gloas_root = rig.import_block(Payload::Syncing).await;
+
+    let mut gloas_roots = vec![];
+    while rig.harness.justified_checkpoint().epoch < gloas_fork_epoch {
+        assert!(
+            (gloas_roots.len() as u64) < E::slots_per_epoch() * 4,
+            "the first Gloas epoch should become justified"
+        );
+        gloas_roots.push(rig.import_block(Payload::Syncing).await);
+    }
+    let justified_root = gloas_roots[0];
+    assert_eq!(
+        rig.harness.justified_checkpoint(),
+        Checkpoint {
+            epoch: gloas_fork_epoch,
+            root: justified_root,
+        }
+    );
+    let tip_root = *gloas_roots.last().unwrap();
+    assert_eq!(rig.cached_head().head_block_root(), tip_root);
+    assert!(rig.harness.shutdown_reasons().is_empty());
+
+    let result = rig
+        .harness
+        .chain
+        .process_invalid_execution_payload(&InvalidationOperation::InvalidateMany {
+            head_hash: rig.block_hash(pre_gloas_root),
+            always_invalidate_head: true,
+            latest_valid_ancestor: rig.block_hash(last_valid_root),
+        })
+        .await;
+    let Err(BeaconChainError::JustifiedPayloadInvalid {
+        justified_root: reported_root,
+        ..
+    }) = result
+    else {
+        panic!("the justified block rests on the invalid payload: {result:?}");
+    };
+    assert_eq!(reported_root, justified_root);
+    assert_eq!(
+        rig.harness.shutdown_reasons(),
+        vec![ShutdownReason::Failure(
+            INVALID_JUSTIFIED_PAYLOAD_SHUTDOWN_REASON
+        )]
+    );
+
+    assert!(is_valid_and_post_bellatrix(
+        rig.execution_status(last_valid_root)
+    ));
+    assert!(rig.execution_status(pre_gloas_root).is_invalid());
+    for root in &gloas_roots {
+        assert!(rig.execution_status(*root).is_invalid());
+    }
+    assert_eq!(
+        rig.harness
+            .chain
+            .canonical_head
+            .fork_choice_read_lock()
+            .inherited_execution_status(&justified_root)
+            .unwrap(),
+        Some(ExecutionVerdict::Invalid)
+    );
+
+    // Fork choice can only offer the justified block on its `EMPTY` node, which ends on the
+    // invalid payload, so the canonical head refuses to move there and stays on the old tip.
+    let fork_choice_head = rig
+        .harness
+        .chain
+        .canonical_head
+        .fork_choice_write_lock()
+        .get_head(rig.harness.chain.slot().unwrap(), &rig.harness.chain.spec)
+        .unwrap();
+    assert_eq!(
+        fork_choice_head.as_pair(),
+        (justified_root, PayloadStatus::Empty)
+    );
+    rig.recompute_head().await;
+    assert_eq!(rig.cached_head().head_block_root(), tip_root);
+}
+
 fn is_valid_and_post_bellatrix(status: ExecutionStatus) -> bool {
     matches!(status, ExecutionStatus::Valid(_))
 }

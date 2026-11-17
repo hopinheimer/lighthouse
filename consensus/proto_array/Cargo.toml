@@ -26,6 +26,7 @@ yaml_serde = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 fixed_bytes = { workspace = true }
+proptest = { workspace = true }
 
 [[bench]]
 name = "find_head"

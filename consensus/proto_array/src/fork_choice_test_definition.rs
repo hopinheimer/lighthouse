@@ -5,7 +5,9 @@ mod no_votes;
 mod votes;
 
 use crate::error::Error;
-use crate::proto_array_fork_choice::{Block, ExecutionStatus, PayloadStatus, ProtoArrayForkChoice};
+use crate::proto_array_fork_choice::{
+    Block, ExecutionStatus, ExecutionVerdict, ForkChoiceNode, PayloadStatus, ProtoArrayForkChoice,
+};
 use crate::{InvalidationOperation, JustifiedBalances, ParentPayloadStatus};
 use fixed_bytes::FixedBytesExtended;
 use serde::{Deserialize, Serialize};
@@ -132,6 +134,31 @@ pub enum Operation {
         parent_payload_status: PayloadStatus,
         proposal_slot: Slot,
         expected: bool,
+    },
+    /// Receive the envelope of `block_root` before the execution layer has judged its payload.
+    ProcessUnjudgedExecutionPayloadEnvelope {
+        block_root: Hash256,
+    },
+    /// The execution layer judged the payload `block_hash` VALID.
+    ValidatePayload {
+        block_hash: ExecutionBlockHash,
+        #[serde(default)]
+        expect_error: bool,
+    },
+    /// The execution layer rejected a payload on `newPayload`. The rejected block never reached
+    /// fork choice, so the walk starts at the payload it builds on.
+    InvalidatePayloadOnImport {
+        parent_hash: ExecutionBlockHash,
+        latest_valid_ancestor: ExecutionBlockHash,
+    },
+    AssertExecutionStatus {
+        block_root: Hash256,
+        expected: ExecutionStatus,
+    },
+    AssertExecutionVerdict {
+        block_root: Hash256,
+        payload_status: PayloadStatus,
+        expected: ExecutionVerdict,
     },
 }
 
@@ -642,6 +669,96 @@ impl ForkChoiceTestDefinition {
                         actual, expected,
                         "should_build_on_full mismatch at op index {}",
                         op_index
+                    );
+                }
+                Operation::ProcessUnjudgedExecutionPayloadEnvelope { block_root } => {
+                    let block_hash = fork_choice
+                        .get_block(&block_root)
+                        .and_then(|block| block.execution_payload_block_hash)
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "envelope op at index {} names a block without a bid",
+                                op_index
+                            )
+                        });
+                    fork_choice
+                        .on_payload_envelope_received(
+                            block_root,
+                            ExecutionStatus::Optimistic(block_hash),
+                        )
+                        .unwrap_or_else(|e| {
+                            panic!("envelope op at index {} returned error: {}", op_index, e)
+                        });
+                    check_bytes_round_trip(&fork_choice);
+                }
+                Operation::ValidatePayload {
+                    block_hash,
+                    expect_error,
+                } => {
+                    let result = fork_choice.process_execution_payload_validation(block_hash);
+                    assert_eq!(
+                        result.is_err(),
+                        expect_error,
+                        "validation op at index {} returned {:?}",
+                        op_index,
+                        result
+                    );
+                    check_bytes_round_trip(&fork_choice);
+                }
+                Operation::InvalidatePayloadOnImport {
+                    parent_hash,
+                    latest_valid_ancestor,
+                } => {
+                    fork_choice
+                        .process_execution_payload_invalidation::<MainnetEthSpec>(
+                            &InvalidationOperation::InvalidateMany {
+                                head_hash: parent_hash,
+                                always_invalidate_head: false,
+                                latest_valid_ancestor,
+                            },
+                            self.finalized_checkpoint,
+                        )
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "invalidation op at index {} returned error: {}",
+                                op_index, e
+                            )
+                        });
+                    check_bytes_round_trip(&fork_choice);
+                }
+                Operation::AssertExecutionStatus {
+                    block_root,
+                    expected,
+                } => {
+                    let actual = fork_choice
+                        .get_block(&block_root)
+                        .unwrap_or_else(|| {
+                            panic!("block unknown at op index {}: {:?}", op_index, block_root)
+                        })
+                        .execution_status;
+                    assert_eq!(
+                        actual, expected,
+                        "execution status mismatch for {:?} at op index {}",
+                        block_root, op_index
+                    );
+                }
+                Operation::AssertExecutionVerdict {
+                    block_root,
+                    payload_status,
+                    expected,
+                } => {
+                    let actual = fork_choice
+                        .get_node_execution_status(ForkChoiceNode::new(block_root, payload_status))
+                        .unwrap_or_else(|e| {
+                            panic!(
+                                "execution verdict op at index {} returned error: {:?}",
+                                op_index, e
+                            )
+                        });
+                    assert_eq!(
+                        actual, expected,
+                        "execution verdict mismatch for ({:?}, {:?}) at op index {}",
+                        block_root, payload_status, op_index
                     );
                 }
             }

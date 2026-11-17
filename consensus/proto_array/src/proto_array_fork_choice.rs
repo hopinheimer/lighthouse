@@ -255,7 +255,7 @@ impl fmt::Display for ExecutionStatus {
 ///
 /// Do not implement a direct conversion from `ExecutionStatus`; deriving a verdict requires fork
 /// choice state.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExecutionVerdict {
     Valid,
     Invalid,

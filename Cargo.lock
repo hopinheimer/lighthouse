@@ -8007,6 +8007,7 @@ dependencies = [
  "ethereum_ssz",
  "ethereum_ssz_derive",
  "fixed_bytes",
+ "proptest",
  "safe_arith",
  "serde",
  "smallvec",

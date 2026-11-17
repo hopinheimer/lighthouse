@@ -1336,4 +1336,257 @@ mod tests {
         }
         .run();
     }
+
+    /// A block justified and finalized at genesis. Pre-Gloas blocks pass `None` hashes.
+    fn block(
+        slot: u64,
+        root: u64,
+        parent: u64,
+        parent_hash: Option<u64>,
+        block_hash: Option<u64>,
+    ) -> Operation {
+        Operation::ProcessBlock {
+            slot: Slot::new(slot),
+            root: get_root(root),
+            parent_root: get_root(parent),
+            justified_checkpoint: get_checkpoint(0),
+            finalized_checkpoint: get_checkpoint(0),
+            execution_payload_parent_hash: parent_hash.map(get_hash),
+            execution_payload_block_hash: block_hash.map(get_hash),
+        }
+    }
+
+    fn unjudged_envelope(root: u64) -> Operation {
+        Operation::ProcessUnjudgedExecutionPayloadEnvelope {
+            block_root: get_root(root),
+        }
+    }
+
+    fn status(root: u64, expected: fn(ExecutionBlockHash) -> ExecutionStatus) -> Operation {
+        Operation::AssertExecutionStatus {
+            block_root: get_root(root),
+            expected: expected(get_hash(root)),
+        }
+    }
+
+    fn verdict(root: u64, payload_status: PayloadStatus, expected: ExecutionVerdict) -> Operation {
+        Operation::AssertExecutionVerdict {
+            block_root: get_root(root),
+            payload_status,
+            expected,
+        }
+    }
+
+    fn find_head_from(
+        justified_checkpoint: Checkpoint,
+        expected_head: u64,
+        expected_payload_status: Option<PayloadStatus>,
+        current_slot: u64,
+    ) -> Operation {
+        Operation::FindHead {
+            justified_checkpoint,
+            finalized_checkpoint: get_checkpoint(0),
+            justified_state_balances: vec![1],
+            expected_head: get_root(expected_head),
+            current_slot: Slot::new(current_slot),
+            expected_payload_status,
+        }
+    }
+
+    fn definition(spec: ChainSpec, operations: Vec<Operation>) -> ForkChoiceTestDefinition {
+        let gloas_genesis = spec.gloas_fork_epoch == Some(Epoch::new(0));
+        ForkChoiceTestDefinition {
+            finalized_block_slot: Slot::new(0),
+            justified_checkpoint: get_checkpoint(0),
+            finalized_checkpoint: get_checkpoint(0),
+            operations,
+            // Gloas children of genesis that name hash 42 extend its `EMPTY` node.
+            execution_payload_parent_hash: gloas_genesis.then(|| get_hash(42)),
+            execution_payload_block_hash: gloas_genesis.then(|| get_hash(0)),
+            spec: Some(spec),
+        }
+    }
+
+    /// A pre-Gloas payload is rejected beneath the first Gloas block, which is the justified
+    /// checkpoint:
+    ///
+    /// ```text
+    /// genesis <- A0 (pre-Gloas, slot 30) <- A (pre-Gloas, slot 31) <- B (Gloas, slot 32) <- C
+    /// ```
+    ///
+    /// The rejection names `A0` as the last valid payload. With `c_on_full`, `C` extends `B`'s
+    /// `FULL` node and the rejection is reported against `B`'s payload, as a forkchoiceUpdated on
+    /// `(C, EMPTY)` would. Otherwise `C` extends `B`'s `EMPTY` node and the rejection is reported
+    /// against `A`'s payload.
+    ///
+    /// `B` builds on `A`'s payload whichever node `C` extends, so `A`, `B` and `C` are all
+    /// condemned, and a head walk that starts at `B` stops at `B` on its `EMPTY` node.
+    fn fork_boundary_invalid_ancestor_of_justified(c_on_full: bool) {
+        let slot_b = MainnetEthSpec::slots_per_epoch();
+        let slot_c = slot_b + 1;
+        let justified_b = Checkpoint {
+            epoch: Epoch::new(1),
+            root: get_root(3),
+        };
+        let c_parent_hash = if c_on_full { 3 } else { 2 };
+
+        let mut operations = vec![
+            block(slot_b - 2, 1, 0, None, None),
+            block(slot_b - 1, 2, 1, None, None),
+            block(slot_b, 3, 2, Some(2), Some(3)),
+        ];
+        if c_on_full {
+            operations.push(unjudged_envelope(3));
+        }
+        operations.extend([
+            block(slot_c, 4, 3, Some(c_parent_hash), Some(4)),
+            Operation::ProcessAttestation {
+                validator_index: 0,
+                block_root: get_root(4),
+                attestation_slot: Slot::new(slot_c),
+            },
+            find_head_from(get_checkpoint(0), 4, None, slot_c),
+            verdict(3, PayloadStatus::Empty, ExecutionVerdict::Optimistic),
+            Operation::InvalidatePayload {
+                head_hash: get_hash(c_parent_hash),
+                latest_valid_ancestor: Some(get_hash(1)),
+            },
+            status(1, ExecutionStatus::Optimistic),
+            status(2, ExecutionStatus::Invalid),
+            status(3, ExecutionStatus::Invalid),
+            status(4, ExecutionStatus::Invalid),
+            verdict(3, PayloadStatus::Empty, ExecutionVerdict::Invalid),
+            verdict(3, PayloadStatus::Pending, ExecutionVerdict::Invalid),
+            verdict(3, PayloadStatus::Full, ExecutionVerdict::Invalid),
+            verdict(4, PayloadStatus::Empty, ExecutionVerdict::Invalid),
+            // From genesis the walk falls back to the last valid block.
+            find_head_from(get_checkpoint(0), 1, None, slot_c),
+            // From `B` neither `C` nor `B`'s `FULL` node may be chosen.
+            find_head_from(justified_b, 3, Some(PayloadStatus::Empty), slot_c),
+        ]);
+
+        // An envelope for `B` that arrives after the verdict cannot revive its payload.
+        if !c_on_full {
+            operations.extend([
+                unjudged_envelope(3),
+                status(3, ExecutionStatus::Invalid),
+                find_head_from(justified_b, 3, Some(PayloadStatus::Empty), slot_c),
+            ]);
+        }
+
+        definition(gloas_fork_boundary_spec(), operations).run();
+    }
+
+    #[test]
+    fn fork_boundary_invalid_ancestor_of_justified_c_on_empty() {
+        fork_boundary_invalid_ancestor_of_justified(false);
+    }
+
+    #[test]
+    fn fork_boundary_invalid_ancestor_of_justified_c_on_full() {
+        fork_boundary_invalid_ancestor_of_justified(true);
+    }
+
+    /// A VALID verdict promotes every payload beneath it across the fork boundary, and a VALID
+    /// verdict on a pre-Gloas payload leaves the Gloas payloads above it unjudged.
+    ///
+    /// ```text
+    /// genesis <- A0 (pre-Gloas) <- A (pre-Gloas) <- B (Gloas) <- C (on B's FULL node)
+    /// ```
+    #[test]
+    fn fork_boundary_validation() {
+        let slot_b = MainnetEthSpec::slots_per_epoch();
+        let operations = vec![
+            block(slot_b - 2, 1, 0, None, None),
+            block(slot_b - 1, 2, 1, None, None),
+            block(slot_b, 3, 2, Some(2), Some(3)),
+            unjudged_envelope(3),
+            block(slot_b + 1, 4, 3, Some(3), Some(4)),
+            unjudged_envelope(4),
+            Operation::ValidatePayload {
+                block_hash: get_hash(2),
+                expect_error: false,
+            },
+            status(1, ExecutionStatus::Valid),
+            status(2, ExecutionStatus::Valid),
+            status(3, ExecutionStatus::Optimistic),
+            status(4, ExecutionStatus::Optimistic),
+            verdict(3, PayloadStatus::Empty, ExecutionVerdict::Valid),
+            verdict(3, PayloadStatus::Full, ExecutionVerdict::Optimistic),
+            Operation::ValidatePayload {
+                block_hash: get_hash(4),
+                expect_error: false,
+            },
+            status(3, ExecutionStatus::Valid),
+            status(4, ExecutionStatus::Valid),
+            verdict(4, PayloadStatus::Empty, ExecutionVerdict::Valid),
+        ];
+        definition(gloas_fork_boundary_spec(), operations).run();
+    }
+
+    /// The verdict of a node follows the payload it ends on: a `FULL` node its own payload, an
+    /// `EMPTY` or `PENDING` node the payload its bid builds on. VALID on a payload past an
+    /// `EMPTY` gap skips the payload the gap left out.
+    ///
+    /// ```text
+    /// genesis <- P (envelope) <- Q (on P's FULL node, no envelope) <- R (on Q's EMPTY node)
+    /// ```
+    #[test]
+    fn verdict_per_node() {
+        let operations = vec![
+            block(1, 1, 0, Some(42), Some(1)),
+            unjudged_envelope(1),
+            block(2, 2, 1, Some(1), Some(2)),
+            block(3, 3, 2, Some(1), Some(3)),
+            unjudged_envelope(3),
+            verdict(1, PayloadStatus::Empty, ExecutionVerdict::Valid),
+            verdict(1, PayloadStatus::Full, ExecutionVerdict::Optimistic),
+            verdict(2, PayloadStatus::Empty, ExecutionVerdict::Optimistic),
+            verdict(2, PayloadStatus::Pending, ExecutionVerdict::Optimistic),
+            // `Q` has no payload of its own yet: its `FULL` node answers with what its bid
+            // builds on.
+            verdict(2, PayloadStatus::Full, ExecutionVerdict::Optimistic),
+            verdict(3, PayloadStatus::Empty, ExecutionVerdict::Optimistic),
+            verdict(3, PayloadStatus::Full, ExecutionVerdict::Optimistic),
+            Operation::ValidatePayload {
+                block_hash: get_hash(3),
+                expect_error: false,
+            },
+            status(1, ExecutionStatus::Valid),
+            status(2, ExecutionStatus::NotYetRevealed),
+            status(3, ExecutionStatus::Valid),
+            verdict(2, PayloadStatus::Empty, ExecutionVerdict::Valid),
+            verdict(3, PayloadStatus::Empty, ExecutionVerdict::Valid),
+            verdict(3, PayloadStatus::Full, ExecutionVerdict::Valid),
+        ];
+        definition(gloas_spec(), operations).run();
+    }
+
+    /// The rejected range skips an `EMPTY` gap. Only payloads the range executed are condemned:
+    /// the skipped payload of `Q` stays unrevealed and the head stays on `R`'s `EMPTY` node.
+    ///
+    /// ```text
+    /// genesis <- P (envelope) <- Q (on P's FULL node, no envelope) <- R (on Q's EMPTY node)
+    /// ```
+    #[test]
+    fn rejected_range_over_empty_gap() {
+        let operations = vec![
+            block(1, 1, 0, Some(42), Some(1)),
+            unjudged_envelope(1),
+            block(2, 2, 1, Some(1), Some(2)),
+            block(3, 3, 2, Some(1), Some(3)),
+            unjudged_envelope(3),
+            Operation::InvalidatePayload {
+                head_hash: get_hash(3),
+                latest_valid_ancestor: Some(get_hash(1)),
+            },
+            status(1, ExecutionStatus::Optimistic),
+            status(2, ExecutionStatus::NotYetRevealed),
+            status(3, ExecutionStatus::Invalid),
+            verdict(3, PayloadStatus::Full, ExecutionVerdict::Invalid),
+            verdict(3, PayloadStatus::Empty, ExecutionVerdict::Optimistic),
+            find_head_from(get_checkpoint(0), 3, Some(PayloadStatus::Empty), 4),
+        ];
+        definition(gloas_spec(), operations).run();
+    }
 }

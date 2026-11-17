@@ -1,6 +1,8 @@
 mod error;
 pub mod fork_choice_test_definition;
 mod justified_balances;
+#[cfg(test)]
+mod optimistic_sync_fuzz;
 mod proto_array;
 mod proto_array_fork_choice;
 mod ssz_container;
